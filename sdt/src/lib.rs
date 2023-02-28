@@ -1,100 +1,120 @@
-use rand::{thread_rng, RngCore};
+pub mod error;
+pub mod utils;
+pub mod value;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use sha2::Digest;
+use serde_json::json;
+use serde_with::skip_serializing_none;
+use utils::*;
+use value::SdtValue;
 
-fn create_random<const N: usize>() -> [u8; N] {
-    let mut key_data = [0u8; N];
-    let mut key_rng = thread_rng();
-    key_rng.fill_bytes(&mut key_data);
-    key_data
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[skip_serializing_none]
+pub struct Sdt {
+    id: String,
+    previous: Option<String>,
+    root: SdtNode,
+}
+
+impl Sdt {
+    pub fn new(id: &str, node: SdtNode) -> Self {
+        Self {
+            id: id.to_owned(),
+            previous: None,
+            root: node,
+        }
+    }
+
+    pub fn new_mutation(id: &str, prev: &str, node: SdtNode) -> Self {
+        Self {
+            id: id.to_owned(),
+            previous: Some(prev.to_owned()),
+            root: node,
+        }
+    }
+
+    pub fn proof(&self) -> String {
+        digest(&serde_json::to_string(&self).unwrap())
+    }
+
+    pub fn disclose_by_query(&self, query: &str) -> SdtNode {
+        let query_keys = parse_query(query);
+        let mut result = self.root.clone();
+        let mut queue: Vec<(String, &mut SdtNode)> = vec![("".to_owned(), &mut result)];
+        while let Some((path, cn)) = queue.pop() {
+            let path_key = format!("{}{}/", path, cn.key);
+            if !query_keys.contains(&path_key) {
+                let matched = query_keys.iter().any(|x| x.starts_with(&path_key));
+                if matched {
+                    match &mut cn.value {
+                        SdtNodeKind::Branch { children } => {
+                            for n in children {
+                                queue.push((path_key.clone(), n));
+                            }
+                        }
+                        _ => {}
+                    }
+                }else{
+                    cn.mask()
+                }
+            }
+        }
+        result
+    }
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub struct TrieNode {
+pub struct SdtNode {
     key: String,
     proof: String,
-    value: TrieNodeKind,
+    value: SdtNodeKind,
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum MutationKind {
-    Create { value: Value },
-    Update { value: Value },
+    Create { value: SdtValue },
+    Update { value: SdtValue },
     Revoke,
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
-pub enum TrieNodeKind {
+pub enum SdtNodeKind {
     Masked,
     Claim { salt: String, change: MutationKind },
-    Branch { children: Vec<TrieNode> },
+    Branch { children: Vec<SdtNode> },
 }
 
-fn digest(payload: &str) -> String {
-    hex::encode(sha2::Sha256::digest(payload.as_bytes()))
-}
-
-impl TrieNode {
+impl SdtNode {
     pub fn new_branch(key: &str, children: Vec<Self>) -> Self {
         let mut payload = json!({});
         for child in &children {
             payload[child.key.clone()] = serde_json::Value::String(child.proof.clone())
         }
 
-        TrieNode {
+        Self {
             key: key.to_string(),
             proof: digest(&payload.to_string()),
-            value: TrieNodeKind::Branch { children },
+            value: SdtNodeKind::Branch { children },
         }
     }
 
-    pub fn create_claim(key: &str, value: Value) -> Self {
+    pub fn new_claim(key: &str, m: MutationKind) -> Self {
         let salt = hex::encode(create_random::<16>());
-        let claim = TrieNodeKind::Claim {
+        let claim = SdtNodeKind::Claim {
             salt: salt.to_string(),
-            change: MutationKind::Create { value },
+            change: m,
         };
         let proof = digest(&serde_json::to_string(&claim).unwrap());
-        TrieNode {
+        Self {
             key: key.to_string(),
             proof: proof,
             value: claim,
         }
     }
 
-    pub fn update_claim(key: &str, value: Value) -> Self {
-        let salt = hex::encode(create_random::<16>());
-        let claim = TrieNodeKind::Claim {
-            salt: salt.to_string(),
-            change: MutationKind::Update { value },
-        };
-        let proof = digest(&serde_json::to_string(&claim).unwrap());
-        TrieNode {
-            key: key.to_string(),
-            proof: proof,
-            value: claim,
-        }
-    }
-
-    pub fn revoke_claim(key: &str) -> Self {
-        let salt = hex::encode(create_random::<16>());
-        let claim = TrieNodeKind::Claim {
-            salt: salt.to_string(),
-            change: MutationKind::Revoke,
-        };
-        let proof = digest(&serde_json::to_string(&claim).unwrap());
-        TrieNode {
-            key: key.to_string(),
-            proof: proof,
-            value: claim,
-        }
-    }
-
-    pub fn revealByQuery(&self, query: &str) -> Self {
-        self.clone()
+    pub fn mask(&mut self){
+        self.value = SdtNodeKind::Masked;
     }
 }
 
@@ -102,30 +122,55 @@ impl TrieNode {
 mod tests {
     use super::*;
     #[test]
-    fn trie_test() {
-        /*
-         {
-           "subject": "idp2p://xxxx",
-           "previous": {
-              "subject": "idp2p://xxxx",
-              "body": {
-               }
-           },
-           "body": {
-            }
-         }
-        */
-        let personal = TrieNode::new_branch(
+    fn sdt_test() {
+        let personal = SdtNode::new_branch(
             "personal",
-            vec![TrieNode::create_claim(
+            vec![SdtNode::new_claim(
                 "name",
-                Value::String("Adem".to_owned()),
+                MutationKind::Create {
+                    value: SdtValue::String("Adem".to_owned()),
+                },
             )],
         );
-        let assertion_key1 = TrieNode::create_claim("key1", Value::Number(0u32.into()));
-        let assertion_keys = TrieNode::new_branch("assertion_keys", vec![assertion_key1]);
-        let root = TrieNode::new_branch("/", vec![personal, assertion_keys]);
-        eprintln!("{}", serde_json::to_string(&root).unwrap());
+        let assertion_key1 = SdtNode::new_claim(
+            "key1",
+            MutationKind::Create {
+                value: SdtValue::Number(0u32.into()),
+            },
+        );
+        let assertion_keys = SdtNode::new_branch("assertion_keys", vec![assertion_key1]);
+        let root = SdtNode::new_branch("", vec![personal, assertion_keys]);
+        let sdt = Sdt::new("id", root);
+        let filter = sdt.disclose_by_query("query");
+        eprintln!("{}", serde_json::to_string(&filter).unwrap());
+
+        /*let query_root = SdtQuery::new_with_children(
+            "",
+            vec![SdtQuery::new_with_children(
+                "keys",
+                vec![SdtQuery::new_with_children(
+                    "agreements",
+                    vec![SdtQuery::new("key-1")],
+                )],
+            )],
+        );
+
+        //let mut result: SdtNode = SdtNode::new_branch(key, children)
+        let mut queue: Vec<(String, SdtNode)> = vec![("".to_owned(), root)];
+        while !queue.is_empty() {
+            let (path, mut cn) = queue.pop().unwrap();
+            let path_key = format!("{}{}/", path, cn.key);
+            cn.value = SdtNodeKind::None;
+            match cn.value {
+                SdtNodeKind::Claim { salt, change } => println!("{}{}", salt, path_key),
+                SdtNodeKind::Branch { children } => {
+                    for n in children {
+                        queue.push((path_key.clone(), n));
+                    }
+                }
+                _ => {}
+            }
+        }*/
         //eprintln!("{:?}", trie);
     }
 }
