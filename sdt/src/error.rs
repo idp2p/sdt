@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum SdtError {
     #[error(transparent)]
     StdError(#[from] std::io::Error),
+    #[error(transparent)]
+    SerdeJsonError(#[from] serde_json::Error),
     #[error("Other")]
     Other,
 }

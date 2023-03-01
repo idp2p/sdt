@@ -19,6 +19,7 @@ struct QueryNode {
     path: String,
     children: Vec<QueryNode>,
 }
+
 pub(crate) fn parse_query(query: &str) -> Vec<String> {
     let mut query_keys: Vec<String> = vec![];
     let lines: Vec<&str> = query.trim().split("\n").map(|x| x.trim()).collect();
@@ -42,8 +43,6 @@ pub(crate) fn parse_query(query: &str) -> Vec<String> {
             query_keys.push(format!("{}{}/", node.path, line));
         }
     }
-    /*let mut queue: Vec<(String, Vec<&str>)> = vec![("".to_owned(), lines)];
-    while let Some(c) = queue.pop() {}*/
     query_keys
 }
 
@@ -56,7 +55,7 @@ mod tests {
     fn parse_test() {
         let query = "
             {
-                personal{
+                personal {
                     name
                     sur
                 }
