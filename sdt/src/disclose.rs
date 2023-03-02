@@ -1,4 +1,4 @@
-use crate::{error::SdtError, node::SdtNode, SdtNodeKind, SdtResult};
+use crate::{error::SdtError, node::{SdtNode, SdtNodeKind}};
 
 #[derive(PartialEq, Debug, Clone)]
 struct QueryNode {
@@ -33,10 +33,9 @@ fn parse_query(query: &str) -> Vec<String> {
     query_keys
 }
 
-pub fn disclose(node: &SdtNode, query: &str) -> Result<SdtResult, SdtError> {
+pub fn disclose(result: &mut SdtNode, query: &str) -> Result<(), SdtError> {
     let query_keys = parse_query(query);
-    let mut result = node.try_into()?;
-    let mut queue: Vec<(String, &mut SdtResult)> = vec![("".to_owned(), &mut result)];
+    let mut queue: Vec<(String, &mut SdtNode)> = vec![("".to_owned(), result)];
     while let Some((path, cn)) = queue.pop() {
         let path_key = format!("{}{}/", path, cn.key);
         if !query_keys.contains(&path_key) {
@@ -57,5 +56,5 @@ pub fn disclose(node: &SdtNode, query: &str) -> Result<SdtResult, SdtError> {
             }
         }
     }
-    Ok(result)
+    Ok(())
 }

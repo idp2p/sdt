@@ -8,29 +8,6 @@ use node::SdtNode;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 use utils::*;
-use value::SdtValue;
-
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum MutationKind {
-    Create { value: SdtValue },
-    Update { value: SdtValue },
-    Revoke,
-}
-
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum SdtNodeKind<T> {
-    Claim { salt: String, change: MutationKind },
-    Branch { children: Vec<T> },
-}
-
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub struct SdtResult {
-    key: String,
-    proof: String,
-    value: Option<SdtNodeKind<Self>>,
-}
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 #[skip_serializing_none]
@@ -61,7 +38,7 @@ impl Sdt {
         Ok(digest(&serde_json::to_string(&self)?))
     }
 
-    pub fn disclose_by_query(&self, query: &str) -> Result<SdtResult, SdtError> {
+    pub fn disclose_by_query(&self, query: &str) -> Result<SdtNode, SdtError> {
         todo!()
     }
 }
