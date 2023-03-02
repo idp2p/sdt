@@ -18,13 +18,13 @@ fn parse_query(query: &str) -> Vec<String> {
     for line in lines {
         if line.ends_with("{") {
             let new_node = QueryNode {
-                path: format!("{}{}/", node.path, line.replace("{", "")),
+                path: format!("{}{}/", node.path, line.replace("{", "").trim()),
                 parent: Some(Box::new(node.clone())),
                 children: vec![],
             };
             node.children.push(new_node.clone());
             node = new_node;
-        } else if line.ends_with("}") {
+        } else if line.trim() == "}" {
             node = *node.parent.unwrap();
         } else {
             query_keys.push(format!("{}{}/", node.path, line));
@@ -58,3 +58,4 @@ pub fn disclose(result: &mut SdtNode, query: &str) -> Result<(), SdtError> {
     }
     Ok(())
 }
+

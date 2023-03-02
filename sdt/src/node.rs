@@ -18,9 +18,9 @@ pub enum MutationKind {
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
-pub enum SdtNodeKind<T> {
+pub enum SdtNodeKind {
     Claim { salt: String, change: MutationKind },
-    Branch { children: Vec<T> },
+    Branch { children: Vec<SdtNode> },
 }
 #[skip_serializing_none]
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -29,7 +29,7 @@ pub struct SdtNode {
     //#[serde(skip_serializing_if = "Option::is_none")]
     pub proof: Option<String>,
     //#[serde(skip_serializing_if = "Option::is_none")]
-    pub value: Option<SdtNodeKind<Self>>,
+    pub value: Option<SdtNodeKind>,
 }
 
 impl SdtNode {
@@ -63,7 +63,8 @@ impl SdtNode {
         };
         if let SdtNodeKind::Branch { children } = self.value.as_mut().unwrap() {
             children.push(child);
-            children.last_mut().unwrap()
+            children.sort_by_key(|x| x.key.to_owned());
+            children.iter_mut().find(|x| x.key == key.to_owned()).unwrap()
         } else {
             panic!("Can't add branch");
         }
@@ -81,6 +82,7 @@ impl SdtNode {
         };
         if let SdtNodeKind::Branch { children } = self.value.as_mut().unwrap() {
             children.push(claim);
+            children.sort_by_key(|x| x.key.to_owned());
         } else {
             panic!("Can't add claim");
         }
@@ -91,18 +93,14 @@ impl SdtNode {
         let mut payload = json!({"key": self.key});
         match self.value.as_mut().unwrap() {
             SdtNodeKind::Claim { salt: _, change: _ } => {
-                payload["kind"] = serde_json::Value::String("Claim".to_owned());
                 payload["value"] = serde_json::to_value(&self.value)?;
             }
             SdtNodeKind::Branch { children } => {
-                payload["kind"] = serde_json::Value::String("Branch".to_owned());
-                let mut value = json!({});
-                let mut sorted = children.clone();
-                sorted.sort_by_key(|x| x.key.clone());
-                for child in sorted {
-                    value[child.key.clone()] = serde_json::Value::String(children.gen_proof()?)
+                let mut branch = json!({});
+                for child in children {
+                    branch[child.key.clone()] = serde_json::Value::String(child.gen_proof()?)
                 }
-                payload["value"] = value;
+                payload["branch"] = branch;
             }
         }
         let digest = digest(&serde_json::to_string(&payload)?);
@@ -123,12 +121,12 @@ mod tests {
         };
         let mut root = SdtNode::new();
         let personal = root.create_branch("personal");
+      
+        personal
+            .push_claim("surname", a_value.clone())
+            .push_claim("name", a_value.clone());
         let addresses = personal.create_branch("addresses");
         addresses.push_claim("work", a_value.clone());
-        personal
-            .push_claim("name", a_value.clone())
-            .push_claim("surname", a_value.clone());
-
         let keys = root.create_branch("keys");
         let assertions = keys.create_branch("assertions");
         assertions.push_claim("key-1", a_value);

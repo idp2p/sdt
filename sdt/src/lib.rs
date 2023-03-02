@@ -2,6 +2,7 @@ pub mod error;
 pub mod utils;
 pub mod value;
 pub mod node;
+pub mod node_map;
 pub mod disclose;
 use error::SdtError;
 use node::SdtNode;
@@ -38,8 +39,8 @@ impl Sdt {
         Ok(digest(&serde_json::to_string(&self)?))
     }
 
-    pub fn disclose_by_query(&self, query: &str) -> Result<SdtNode, SdtError> {
-        todo!()
+    pub fn disclose_by_query(&mut self, query: &str) -> Result<(), SdtError> {
+       disclose::disclose(&mut self.root, query)
     }
 }
 
@@ -49,9 +50,36 @@ impl Sdt {
 
 #[cfg(test)]
 mod tests {
+    use crate::{node::MutationKind, value::SdtValue};
+
     use super::*;
     #[test]
     fn sdt_test() {
+        let a_value = MutationKind::Create {
+            value: SdtValue::String("Adem".to_owned()),
+        };
+        let mut root = SdtNode::new();
+        let personal = root.create_branch("personal");
+      
+        personal
+            .push_claim("surname", a_value.clone())
+            .push_claim("name", a_value.clone());
+        let addresses = personal.create_branch("addresses");
+        addresses.push_claim("work", a_value.clone());
+        let keys = root.create_branch("keys");
+        let assertions = keys.create_branch("assertions");
+        assertions.push_claim("key-1", a_value);
+        let proof = root.gen_proof().unwrap();
+        //eprintln!("{}", serde_json::to_string(&root).unwrap());
+        eprintln!("{}", proof);
+        let mut sdt = Sdt::new("id", root);
+        let query = "
+        {
+            keys
+        }
+        ";
+        sdt.disclose_by_query(query).unwrap();
+        eprintln!("{}", serde_json::to_string(&sdt.root).unwrap());
         /*let personal = SdtNode::new_branch(
             "personal",
             vec![SdtNode::new_claim(
