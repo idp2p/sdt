@@ -1,35 +1,59 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use serde_with::skip_serializing_none;
 
 use crate::{
     error::SdtError,
     utils::{create_random, digest},
-    value::SdtValue,
 };
+use serde_json::Number;
+
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SdtValue {
+    Bool(bool),
+    Number(Number),
+    String(String),
+}
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
-pub enum MutationKind {
+pub enum EventKind {
+    #[serde(rename = "C")]
     Create { value: SdtValue },
+    #[serde(rename = "U")]
     Update { value: SdtValue },
+    #[serde(rename = "R")]
     Revoke,
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum SdtNodeKind {
-    Claim { salt: String, change: MutationKind },
-    Branch { children: Vec<SdtNode> },
+pub struct SdtNodeValue {
+    #[serde(flatten)]
+    event: EventKind,
+    salt: String,
 }
+
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SdtNodeKind {
+    Value(SdtNodeValue),
+    Branch(Vec<SdtNode>),
+}
+
 #[skip_serializing_none]
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct SdtNode {
     pub key: String,
-    //#[serde(skip_serializing_if = "Option::is_none")]
     pub proof: Option<String>,
-    //#[serde(skip_serializing_if = "Option::is_none")]
-    pub value: Option<SdtNodeKind>,
+    pub inner: Option<SdtNodeKind>,
+}
+
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SdtPayload {
+    Body(BTreeMap<String, String>),
 }
 
 impl SdtNode {
@@ -37,52 +61,37 @@ impl SdtNode {
         Self {
             key: "".to_owned(),
             proof: None,
-            value: Some(SdtNodeKind::Branch { children: vec![] }),
+            inner: Some(SdtNodeKind::Branch(vec![])),
         }
     }
 
-    pub fn from_json(node: &str) -> Result<Self, SdtError> {
-        /*let v: Value = serde_json::from_str(events)?;
-        let mut node = SdtNode::new_branch("", vec![]);
-        let mut queue: Vec<(Value, &mut SdtNode)> = vec![(v, &mut node)];
-        while let Some((cv, cn)) = queue.pop() {
-            if let Some(map) = cv.as_object() {
-                if map.contains_key("kind") {
-                } else {
-                }
-            }
-        }*/
-        todo!()
-    }
-
     pub fn create_branch(&mut self, key: &str) -> &mut SdtNode {
-        let child = Self {
+        let node = Self {
             key: key.to_string(),
             proof: None,
-            value: Some(SdtNodeKind::Branch { children: vec![] }),
+            inner: Some(SdtNodeKind::Branch(vec![])),
         };
-        if let SdtNodeKind::Branch { children } = self.value.as_mut().unwrap() {
-            children.push(child);
-            children.sort_by_key(|x| x.key.to_owned());
-            children.iter_mut().find(|x| x.key == key.to_owned()).unwrap()
+        if let SdtNodeKind::Branch(children) = self.inner.as_mut().unwrap() {
+            children.push(node);
+            children.last_mut().unwrap()
         } else {
             panic!("Can't add branch");
         }
     }
 
-    pub fn push_claim(&mut self, key: &str, m: MutationKind) -> &mut SdtNode {
-        let salt = hex::encode(create_random::<16>());
-        let claim = Self {
+    pub fn create_value(&mut self, key: &str, event: EventKind) -> &mut SdtNode {
+        let salt = hex::encode(create_random::<16>()).to_owned();
+        let value = SdtNodeValue{
+            event: event,
+            salt: salt
+        };
+        let node = Self {
             key: key.to_string(),
             proof: None,
-            value: Some(SdtNodeKind::Claim {
-                salt: salt.to_string(),
-                change: m,
-            }),
+            inner: Some(SdtNodeKind::Value(value)) 
         };
-        if let SdtNodeKind::Branch { children } = self.value.as_mut().unwrap() {
-            children.push(claim);
-            children.sort_by_key(|x| x.key.to_owned());
+        if let SdtNodeKind::Branch(children) = self.inner.as_mut().unwrap() {
+            children.push(node);
         } else {
             panic!("Can't add claim");
         }
@@ -90,20 +99,17 @@ impl SdtNode {
     }
 
     pub fn gen_proof(&mut self) -> Result<String, SdtError> {
-        let mut payload = json!({"key": self.key});
-        match self.value.as_mut().unwrap() {
-            SdtNodeKind::Claim { salt: _, change: _ } => {
-                payload["value"] = serde_json::to_value(&self.value)?;
-            }
-            SdtNodeKind::Branch { children } => {
-                let mut branch = json!({});
+        let digest = match self.inner.as_mut().unwrap() {
+            SdtNodeKind::Branch(children) => {
+                let mut body: BTreeMap<String, String> = BTreeMap::new();
                 for child in children {
-                    branch[child.key.clone()] = serde_json::Value::String(child.gen_proof()?)
+                    body.insert(child.key.to_owned(), child.gen_proof()?);
                 }
-                payload["branch"] = branch;
+                let payload = SdtPayload::Body(body);
+                digest(&payload)?
             }
-        }
-        let digest = digest(&serde_json::to_string(&payload)?);
+            val => digest(&val)?,
+        };
         self.proof = Some(digest.clone());
         Ok(digest)
     }
@@ -111,27 +117,27 @@ impl SdtNode {
 
 #[cfg(test)]
 mod tests {
-    use crate::value::SdtValue;
 
     use super::*;
     #[test]
     fn sdt_test() {
-        let a_value = MutationKind::Create {
+        let a_value = EventKind::Create {
             value: SdtValue::String("Adem".to_owned()),
         };
         let mut root = SdtNode::new();
         let personal = root.create_branch("personal");
-      
+
         personal
-            .push_claim("surname", a_value.clone())
-            .push_claim("name", a_value.clone());
+            .create_value("surname", a_value.clone())
+            .create_value("name", a_value.clone());
         let addresses = personal.create_branch("addresses");
-        addresses.push_claim("work", a_value.clone());
+        addresses.create_value("work", a_value.clone());
         let keys = root.create_branch("keys");
         let assertions = keys.create_branch("assertions");
-        assertions.push_claim("key-1", a_value);
+        assertions.create_value("key-1", a_value);
         eprintln!("{}", root.gen_proof().unwrap());
         eprintln!("{}", root.gen_proof().unwrap());
         eprintln!("{}", serde_json::to_string(&root).unwrap());
+        eprintln!("--------------------------");
     }
 }

@@ -41,18 +41,15 @@ pub fn disclose(result: &mut SdtNode, query: &str) -> Result<(), SdtError> {
         if !query_keys.contains(&path_key) {
             let matched = query_keys.iter().any(|x| x.starts_with(&path_key));
             if matched {
-                if let Some(v) = &mut cn.value {
-                    match v {
-                        SdtNodeKind::Branch { children } => {
-                            for n in children {
-                                queue.push((path_key.clone(), n));
-                            }
+                if let Some(v) = &mut cn.inner {
+                    if let  SdtNodeKind::Branch (children)= v  {
+                        for n in children {
+                            queue.push((path_key.clone(), n));
                         }
-                        _ => {}
                     }
                 }
             } else {
-                cn.value = None;
+                cn.inner = None;
             }
         }
     }

@@ -1,5 +1,8 @@
 use rand::{thread_rng, RngCore};
+use serde::Serialize;
 use sha2::Digest;
+
+use crate::error::SdtError;
 
 pub(crate) fn create_random<const N: usize>() -> [u8; N] {
     let mut key_data = [0u8; N];
@@ -8,7 +11,11 @@ pub(crate) fn create_random<const N: usize>() -> [u8; N] {
     key_data
 }
 
-pub(crate) fn digest(payload: &str) -> String {
+pub(crate) fn digest<T: Serialize>(payload: &T) -> Result<String, SdtError> {
+    Ok(digest_str(&serde_json::to_string(payload)?))
+}
+
+pub(crate) fn digest_str(payload: &str) -> String {
     hex::encode(sha2::Sha256::digest(payload.as_bytes()))
 }
 
@@ -57,7 +64,7 @@ mod tests {
             {
                 personal {
                     name
-                    sur
+                    surname
                 }
             }
             ";

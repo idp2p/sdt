@@ -1,8 +1,6 @@
 pub mod error;
 pub mod utils;
-pub mod value;
 pub mod node;
-pub mod node_map;
 pub mod disclose;
 use error::SdtError;
 use node::SdtNode;
@@ -15,7 +13,7 @@ use utils::*;
 pub struct Sdt {
     id: String,
     previous: Option<String>,
-    root: SdtNode,
+    node: SdtNode,
 }
 
 impl Sdt {
@@ -23,7 +21,7 @@ impl Sdt {
         Self {
             id: id.to_owned(),
             previous: None,
-            root: node,
+            node: node,
         }
     }
 
@@ -31,16 +29,16 @@ impl Sdt {
         Self {
             id: id.to_owned(),
             previous: Some(prev.to_owned()),
-            root: node,
+            node: node,
         }
     }
 
     pub fn gen_proof(&self) -> Result<String, SdtError> {
-        Ok(digest(&serde_json::to_string(&self)?))
+        digest(&self)
     }
 
     pub fn disclose_by_query(&mut self, query: &str) -> Result<(), SdtError> {
-       disclose::disclose(&mut self.root, query)
+       disclose::disclose(&mut self.node, query)
     }
 }
 
@@ -50,25 +48,25 @@ impl Sdt {
 
 #[cfg(test)]
 mod tests {
-    use crate::{node::MutationKind, value::SdtValue};
+    use crate::{node::{EventKind, SdtValue}};
 
     use super::*;
     #[test]
     fn sdt_test() {
-        let a_value = MutationKind::Create {
+        let a_value = EventKind::Create {
             value: SdtValue::String("Adem".to_owned()),
         };
         let mut root = SdtNode::new();
         let personal = root.create_branch("personal");
       
         personal
-            .push_claim("surname", a_value.clone())
-            .push_claim("name", a_value.clone());
+            .create_value("surname", a_value.clone())
+            .create_value("name", a_value.clone());
         let addresses = personal.create_branch("addresses");
-        addresses.push_claim("work", a_value.clone());
+        addresses.create_value("work", a_value.clone());
         let keys = root.create_branch("keys");
         let assertions = keys.create_branch("assertions");
-        assertions.push_claim("key-1", a_value);
+        assertions.create_value("key-1", a_value);
         let proof = root.gen_proof().unwrap();
         //eprintln!("{}", serde_json::to_string(&root).unwrap());
         eprintln!("{}", proof);
@@ -79,7 +77,7 @@ mod tests {
         }
         ";
         sdt.disclose_by_query(query).unwrap();
-        eprintln!("{}", serde_json::to_string(&sdt.root).unwrap());
+        eprintln!("{}", serde_json::to_string(&sdt.node).unwrap());
         /*let personal = SdtNode::new_branch(
             "personal",
             vec![SdtNode::new_claim(
