@@ -7,7 +7,7 @@ use crate::{
     error::SdtError,
     utils::{create_random, digest},
 };
-use serde_json::Number;
+use serde_json::{Number, Value};
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -51,10 +51,7 @@ pub struct SdtNode {
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum SdtPayload {
-    Body(BTreeMap<String, String>),
-}
+pub struct  SdtPayload (BTreeMap<String, String>);
 
 impl SdtNode {
     pub fn new() -> Self {
@@ -65,7 +62,12 @@ impl SdtNode {
         }
     }
 
-    pub fn create_branch(&mut self, key: &str) -> &mut SdtNode {
+    pub fn from_json(claims: &str) -> Result<Self, SdtError> {
+        let v: Value = serde_json::from_str(claims)?;
+         parse_json("", v)
+    }
+
+    pub fn create_branch(&mut self, key: &str) -> &mut Self {
         let node = Self {
             key: key.to_string(),
             proof: None,
@@ -79,16 +81,16 @@ impl SdtNode {
         }
     }
 
-    pub fn create_value(&mut self, key: &str, event: EventKind) -> &mut SdtNode {
+    pub fn create_value(&mut self, key: &str, event: EventKind) -> &mut Self {
         let salt = hex::encode(create_random::<16>()).to_owned();
-        let value = SdtNodeValue{
+        let value = SdtNodeValue {
             event: event,
-            salt: salt
+            salt: salt,
         };
         let node = Self {
             key: key.to_string(),
             proof: None,
-            inner: Some(SdtNodeKind::Value(value)) 
+            inner: Some(SdtNodeKind::Value(value)),
         };
         if let SdtNodeKind::Branch(children) = self.inner.as_mut().unwrap() {
             children.push(node);
@@ -105,7 +107,7 @@ impl SdtNode {
                 for child in children {
                     body.insert(child.key.to_owned(), child.gen_proof()?);
                 }
-                let payload = SdtPayload::Body(body);
+                let payload = SdtPayload(body);
                 digest(&payload)?
             }
             val => digest(&val)?,
@@ -115,8 +117,48 @@ impl SdtNode {
     }
 }
 
+fn parse_json(key: &str, val: Value) -> Result<SdtNode, SdtError>{
+    let mut node = SdtNode::new();
+    node.key = key.to_owned();
+    match val {
+        /*Value::Bool(b => {
+            node.inner = Some(SdtNodeKind::Value(SdtNodeValue { event: EventKind::Create {
+                value: SdtValue::Bool(b),
+            }, salt: "".to_owned() }));
+            
+        }
+        Value::Number(n) => {
+            cn.create_value(
+                &key,
+                EventKind::Create {
+                    value: SdtValue::Number(n),
+                },
+            );
+        }*/
+        Value::String(s) => {
+            let event = EventKind::Create {
+                value: SdtValue::String(s),
+            };
+            let x = SdtNodeKind::Value(SdtNodeValue { event, salt: "aaa".to_owned() });
+            node.inner = Some(x);
+        }
+        Value::Object(kv) => {
+            let mut list: Vec<SdtNode> = vec![]; 
+            for (k, v) in kv { 
+                let node = parse_json(&k, v)?;
+                list.push(node);
+            }
+            node.inner = Some(SdtNodeKind::Branch(list));
+        }
+        _ => return Err(SdtError::Other),
+    }
+    return Ok(node)
+
+} 
 #[cfg(test)]
 mod tests {
+
+    use serde_json::json;
 
     use super::*;
     #[test]
@@ -139,5 +181,29 @@ mod tests {
         eprintln!("{}", root.gen_proof().unwrap());
         eprintln!("{}", serde_json::to_string(&root).unwrap());
         eprintln!("--------------------------");
+
+        let _claims = json!({
+            "personal": {
+              "name": "Adem",
+              "surname": "Çağlın",
+              "gender": "Male",
+              "birthday": "1.1.1984"
+            },
+            "phones": {
+              "dial": "+90dial",
+              "cell": "+90cell"
+            },
+            "addresses": {
+              "home": {
+                "zipcode": "2020",
+                "city": "homecity"
+              },
+              "work": {
+                "zipcode": "2030",
+                "city": "workcity"
+              }
+            }
+          });
+          eprintln!("{}", serde_json::to_string_pretty(&parse_json("", _claims).unwrap()).unwrap());
     }
 }
