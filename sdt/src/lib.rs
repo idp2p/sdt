@@ -1,6 +1,7 @@
 pub mod error;
 pub mod utils;
 pub mod node;
+pub mod node2;
 pub mod disclose;
 use error::SdtError;
 use node::SdtNode;
