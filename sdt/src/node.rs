@@ -12,33 +12,16 @@ use serde_json::{Number, Value};
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum SdtValue {
+    Null,
     Bool(bool),
     Number(Number),
     String(String),
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum EventKind {
-    #[serde(rename = "C")]
-    Create { value: SdtValue },
-    #[serde(rename = "U")]
-    Update { value: SdtValue },
-    #[serde(rename = "R")]
-    Revoke,
-}
-
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub struct SdtNodeValue {
-    #[serde(flatten)]
-    event: EventKind,
-    salt: String,
-}
-
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum SdtNodeKind {
-    Value(SdtNodeValue),
+    Value(SdtValue),
     Branch(Vec<SdtNode>),
 }
 
@@ -47,17 +30,19 @@ pub enum SdtNodeKind {
 pub struct SdtNode {
     pub key: String,
     pub proof: Option<String>,
+    pub salt: Option<String>,
     pub inner: Option<SdtNodeKind>,
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub struct  SdtPayload (BTreeMap<String, String>);
+pub struct  SdtPayload (BTreeMap<String, SdtValue>);
 
 impl SdtNode {
     pub fn new() -> Self {
         Self {
             key: "".to_owned(),
             proof: None,
+            salt: None,
             inner: Some(SdtNodeKind::Branch(vec![])),
         }
     }
@@ -71,6 +56,7 @@ impl SdtNode {
         let node = Self {
             key: key.to_string(),
             proof: None,
+            salt: None,
             inner: Some(SdtNodeKind::Branch(vec![])),
         };
         if let SdtNodeKind::Branch(children) = self.inner.as_mut().unwrap() {
@@ -81,15 +67,13 @@ impl SdtNode {
         }
     }
 
-    pub fn create_value(&mut self, key: &str, event: EventKind) -> &mut Self {
+    pub fn create_value(&mut self, key: &str, value: SdtValue) -> &mut Self {
         let salt = hex::encode(create_random::<16>()).to_owned();
-        let value = SdtNodeValue {
-            event: event,
-            salt: salt,
-        };
+       
         let node = Self {
             key: key.to_string(),
             proof: None,
+            salt: Some(salt),
             inner: Some(SdtNodeKind::Value(value)),
         };
         if let SdtNodeKind::Branch(children) = self.inner.as_mut().unwrap() {
@@ -103,14 +87,21 @@ impl SdtNode {
     pub fn gen_proof(&mut self) -> Result<String, SdtError> {
         let digest = match self.inner.as_mut().unwrap() {
             SdtNodeKind::Branch(children) => {
-                let mut body: BTreeMap<String, String> = BTreeMap::new();
+                let mut body: BTreeMap<String, SdtValue> = BTreeMap::new();
                 for child in children {
-                    body.insert(child.key.to_owned(), child.gen_proof()?);
+                    body.insert(child.key.to_owned(), SdtValue::String(child.gen_proof()?));
                 }
                 let payload = SdtPayload(body);
                 digest(&payload)?
             }
-            val => digest(&val)?,
+            SdtNodeKind::Value(val) => {
+                let mut body: BTreeMap<String, SdtValue> = BTreeMap::new();
+                let salt = self.salt.to_owned().unwrap();
+                body.insert("salt".to_owned(), SdtValue::String(salt));
+                body.insert("value".to_owned(), val.to_owned());
+                let payload = SdtPayload(body);
+                digest(&payload)?
+            }
         };
         self.proof = Some(digest.clone());
         Ok(digest)
@@ -136,11 +127,9 @@ fn parse_json(key: &str, val: Value) -> Result<SdtNode, SdtError>{
             );
         }*/
         Value::String(s) => {
-            let event = EventKind::Create {
-                value: SdtValue::String(s),
-            };
-            let x = SdtNodeKind::Value(SdtNodeValue { event, salt: "aaa".to_owned() });
+            let x = SdtNodeKind::Value(SdtValue::String(s));
             node.inner = Some(x);
+            node.salt = Some("".to_owned())
         }
         Value::Object(kv) => {
             let mut list: Vec<SdtNode> = vec![]; 
@@ -163,9 +152,7 @@ mod tests {
     use super::*;
     #[test]
     fn sdt_test() {
-        let a_value = EventKind::Create {
-            value: SdtValue::String("Adem".to_owned()),
-        };
+        let a_value = SdtValue::String("Adem".to_owned());
         let mut root = SdtNode::new();
         let personal = root.create_branch("personal");
 

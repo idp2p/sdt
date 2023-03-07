@@ -2,6 +2,7 @@ pub mod error;
 pub mod utils;
 pub mod node;
 pub mod node2;
+pub mod node3;
 pub mod disclose;
 use error::SdtError;
 use node::SdtNode;
@@ -49,14 +50,12 @@ impl Sdt {
 
 #[cfg(test)]
 mod tests {
-    use crate::{node::{EventKind, SdtValue}};
+    use crate::{node::{SdtValue}};
 
     use super::*;
     #[test]
     fn sdt_test() {
-        let a_value = EventKind::Create {
-            value: SdtValue::String("Adem".to_owned()),
-        };
+        let a_value =  SdtValue::String("Adem".to_owned());
         let mut root = SdtNode::new();
         let personal = root.create_branch("personal");
       
