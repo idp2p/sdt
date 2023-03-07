@@ -19,7 +19,6 @@ pub(crate) fn digest_str(payload: &str) -> String {
     hex::encode(sha2::Sha256::digest(payload.as_bytes()))
 }
 
-
 #[derive(PartialEq, Debug, Clone)]
 struct QueryNode {
     parent: Option<Box<QueryNode>>,
@@ -27,7 +26,7 @@ struct QueryNode {
     children: Vec<QueryNode>,
 }
 
-pub(crate) fn parse_query(query: &str) -> Vec<String> {
+pub fn parse_query(query: &str) -> Vec<String> {
     let mut query_keys: Vec<String> = vec![];
     let lines: Vec<&str> = query.trim().split("\n").map(|x| x.trim()).collect();
     let mut node = QueryNode {
@@ -38,13 +37,13 @@ pub(crate) fn parse_query(query: &str) -> Vec<String> {
     for line in lines {
         if line.ends_with("{") {
             let new_node = QueryNode {
-                path: format!("{}{}/", node.path, line.replace("{", "")),
+                path: format!("{}{}/", node.path, line.replace("{", "").trim()),
                 parent: Some(Box::new(node.clone())),
                 children: vec![],
             };
             node.children.push(new_node.clone());
             node = new_node;
-        } else if line.ends_with("}") {
+        } else if line.trim() == "}" {
             node = *node.parent.unwrap();
         } else {
             query_keys.push(format!("{}{}/", node.path, line));
@@ -52,7 +51,6 @@ pub(crate) fn parse_query(query: &str) -> Vec<String> {
     }
     query_keys
 }
-
 
 #[cfg(test)]
 mod tests {

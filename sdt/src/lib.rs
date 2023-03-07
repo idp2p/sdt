@@ -1,9 +1,7 @@
 pub mod error;
-pub mod utils;
 pub mod node;
-pub mod node2;
-pub mod node3;
-pub mod disclose;
+pub mod utils;
+pub mod value;
 use error::SdtError;
 use node::SdtNode;
 use serde::{Deserialize, Serialize};
@@ -40,93 +38,15 @@ impl Sdt {
     }
 
     pub fn disclose_by_query(&mut self, query: &str) -> Result<(), SdtError> {
-       disclose::disclose(&mut self.node, query)
+        self.node.disclose(query)
     }
 }
 
-
-
-
-
 #[cfg(test)]
 mod tests {
-    use crate::{node::{SdtValue}};
-
     use super::*;
     #[test]
     fn sdt_test() {
-        let a_value =  SdtValue::String("Adem".to_owned());
-        let mut root = SdtNode::new();
-        let personal = root.create_branch("personal");
-      
-        personal
-            .create_value("surname", a_value.clone())
-            .create_value("name", a_value.clone());
-        let addresses = personal.create_branch("addresses");
-        addresses.create_value("work", a_value.clone());
-        let keys = root.create_branch("keys");
-        let assertions = keys.create_branch("assertions");
-        assertions.create_value("key-1", a_value);
-        let proof = root.gen_proof().unwrap();
-        //eprintln!("{}", serde_json::to_string(&root).unwrap());
-        eprintln!("{}", proof);
-        let mut sdt = Sdt::new("id", root);
-        let query = "
-        {
-            keys
-        }
-        ";
-        sdt.disclose_by_query(query).unwrap();
-        eprintln!("{}", serde_json::to_string(&sdt.node).unwrap());
-        /*let personal = SdtNode::new_branch(
-            "personal",
-            vec![SdtNode::new_claim(
-                "name",
-                MutationKind::Create {
-                    value: SdtValue::String("Adem".to_owned()),
-                },
-            )],
-        );
-        let assertion_key1 = SdtNode::new_claim(
-            "key1",
-            MutationKind::Create {
-                value: SdtValue::Number(0u32.into()),
-            },
-        );
-        let assertion_keys = SdtNode::new_branch("assertion_keys", vec![assertion_key1]);
-        let root = SdtNode::new_branch("", vec![personal, assertion_keys]);
-        eprintln!("{}", root.proof().unwrap());*/
-        //let sdt = Sdt::new("id", root);
-        //let filter = sdt.disclose_by_query("query");
-        //eprintln!("{}", serde_json::to_string(&filter).unwrap());
-
-        /*let query_root = SdtQuery::new_with_children(
-            "",
-            vec![SdtQuery::new_with_children(
-                "keys",
-                vec![SdtQuery::new_with_children(
-                    "agreements",
-                    vec![SdtQuery::new("key-1")],
-                )],
-            )],
-        );
-
-        //let mut result: SdtNode = SdtNode::new_branch(key, children)
-        let mut queue: Vec<(String, SdtNode)> = vec![("".to_owned(), root)];
-        while !queue.is_empty() {
-            let (path, mut cn) = queue.pop().unwrap();
-            let path_key = format!("{}{}/", path, cn.key);
-            cn.value = SdtNodeKind::None;
-            match cn.value {
-                SdtNodeKind::Claim { salt, change } => println!("{}{}", salt, path_key),
-                SdtNodeKind::Branch { children } => {
-                    for n in children {
-                        queue.push((path_key.clone(), n));
-                    }
-                }
-                _ => {}
-            }
-        }*/
-        //eprintln!("{:?}", trie);
+        
     }
 }
