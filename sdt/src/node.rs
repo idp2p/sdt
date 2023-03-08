@@ -83,9 +83,9 @@ impl SdtNodeKind {
 }
 
 impl SdtNode {
-    pub fn from_json(s: &str) -> Result<Self, SdtError>{
-        let values: SdtValues = serde_json::from_str(s)?;
-        values.parse_json()
+    pub fn from_json(s: &str) -> Result<Self, SdtError> {
+        let claim: SdtClaim = serde_json::from_str(s)?;
+        claim.parse_json()
     }
 
     pub fn disclose(&mut self, query: &str) -> Result<(), SdtError> {
@@ -94,7 +94,7 @@ impl SdtNode {
         while let Some((path, cn)) = queue.pop() {
             if let SdtBodyKind::Branch(body) = &mut cn.body {
                 let hm = &mut body.branch;
-                let mut keys: HashMap<String, String> = HashMap::new();
+                let mut path_keys: HashMap<String, String> = HashMap::new();
                 for (key, nk) in hm.to_owned() {
                     let path_key = format!("{}{}/", path, key.to_owned());
                     if let SdtNodeKind::Node(n) = nk {
@@ -103,15 +103,15 @@ impl SdtNode {
                             if !matched {
                                 hm.insert(key.to_owned(), SdtNodeKind::Proof(n.proof.clone()));
                             } else {
-                                keys.insert(key, path_key);
+                                path_keys.insert(key, path_key);
                             }
                         }
                     }
                 }
-    
+
                 for (key, nk) in hm {
                     if let SdtNodeKind::Node(n) = nk {
-                        if let Some(path_key) = keys.get(key) {
+                        if let Some(path_key) = path_keys.get(key) {
                             queue.push((path_key.to_owned(), n));
                         }
                     }
@@ -120,13 +120,13 @@ impl SdtNode {
         }
         Ok(())
     }
-    
-}
 
+
+}
 
 #[cfg(test)]
 mod tests {
-    use serde_json::{Number, json};
+    use serde_json::{Number};
 
     use super::*;
     #[test]
@@ -140,7 +140,7 @@ mod tests {
             )
             .build()?;
         let assertions = SdtBranch::new()
-            .add("key_1", SdtNodeKind::new_str_value("key1....")?)
+            .add("key_1", SdtNodeKind::new_str_value("0x12")?)
             .build()?;
         let keys = SdtBranch::new()
             .add("assertions", SdtNodeKind::Node(assertions))
@@ -163,18 +163,18 @@ mod tests {
 
     #[test]
     fn from_json_test() -> Result<(), SdtError> {
-        let s = json!({
+        let s = r#"{
             "personal": {
                "name": "Adem",
                "age": 5
             },
             "keys": {
                "assertions": {
-                  "key-1": "z...."
+                  "key-1": "0x12...."
                }
             }
-        });
-        let node = SdtNode::from_json(&s.to_string())?;
+        }"#;
+        let node = SdtNode::from_json(s)?;
         eprintln!("{}", serde_json::to_string(&node)?);
         Ok(())
     }

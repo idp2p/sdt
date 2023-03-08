@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::SdtError,
-    utils::{create_random, digest}, node::{SdtBranch, SdtNodeKind, SdtNode},
+    node::{SdtBranch, SdtNode, SdtNodeKind},
+    utils::{create_random, digest},
 };
 use serde_json::Number;
 
@@ -28,14 +29,22 @@ pub struct SdtPayload(pub BTreeMap<String, SdtValueKind>);
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum SdtValues {
+pub enum SdtClaim {
     Value(SdtValueKind),
-    Branch(HashMap<String, SdtValues>),
+    Branch(HashMap<String, SdtClaim>),
+}
+
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SdtResult {
+    Values(Vec<SdtValueKind>),
+    Branch(HashMap<String, SdtResult>),
 }
 
 impl SdtValue {
     pub fn new(value: SdtValueKind) -> Self {
-        let salt = hex::encode(create_random::<16>()).to_owned();
+        let raw = hex::encode(create_random::<16>()).to_owned();
+        let salt = format!("0x{raw}");
         Self { salt, value }
     }
 
@@ -48,27 +57,49 @@ impl SdtValue {
     }
 }
 
-impl SdtValues {
-    pub fn parse_json(&self) -> Result<SdtNode, SdtError>{
+impl SdtClaim {
+    pub fn parse_json(&self) -> Result<SdtNode, SdtError> {
         let mut branch = SdtBranch::new();
-        match &self {
-            SdtValues::Value(val) => {
-                
-            },
-            SdtValues::Branch(map) => {
-                for (k, v) in map{
-                   match v {
-                    SdtValues::Value(val) => {
+        if let SdtClaim::Branch(map) = &self {
+            for (k, v) in map {
+                match v {
+                    SdtClaim::Value(val) => {
                         branch.add(k, SdtNodeKind::new_value(val.to_owned())?);
-                    },
-                    SdtValues::Branch(_) => {
+                    }
+                    SdtClaim::Branch(_) => {
                         branch.add(k, SdtNodeKind::Node(v.parse_json()?));
-                    },
+                    }
                 }
-                
-                }
-            },
+            }
         }
-        return branch.build()    
-    } 
+        return branch.build();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_test() -> Result<(), SdtError> {
+        let query = r#"
+            {
+                "personal": {
+                    "name": "Adem",
+                    "surname": "Çağlın"
+                }
+            }"#;
+
+        let result_str = r#"
+            {
+                "personal": {
+                    "name": ["Adem", "Adem2"],
+                    "surname": ["Çağlın", null]
+                }
+            }"#;
+
+        let result: SdtResult = serde_json::from_str(result_str)?;
+        eprintln!("{}", serde_json::to_string_pretty(&result)?);
+        Ok(())
+    }
 }

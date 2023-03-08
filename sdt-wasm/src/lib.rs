@@ -1,19 +1,41 @@
 mod utils;
 
+use sdt::{Sdt, value::SdtClaim};
+use serde::{Serialize, Deserialize};
 use wasm_bindgen::prelude::*;
 
-// When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
-// allocator.
-#[cfg(feature = "wee_alloc")]
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-#[wasm_bindgen]
-extern {
-    fn alert(s: &str);
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub struct CreateInput {
+    pub subject: String,
+    pub claim: SdtClaim  
+}
+
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub struct MutateInput {
+    pub sdt: Sdt,
+    pub claim: SdtClaim  
+}
+
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub struct DiscloseInput {
+    pub sdt: Sdt,
+    pub query: String  
+}
+
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub struct ValidateInput {
+    pub sdt: Sdt,
+    pub query: String  
 }
 
 #[wasm_bindgen]
-pub fn greet() {
-    alert("Hello, sdt-wasm!");
+pub fn dispatch(cmd: &str, input: &str) -> String {
+    match cmd {
+        "CREATE" => {
+            
+        }
+        _=> {}
+    }
+    todo!()
 }

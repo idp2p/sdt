@@ -16,7 +16,8 @@ pub(crate) fn digest<T: Serialize>(payload: &T) -> Result<String, SdtError> {
 }
 
 pub(crate) fn digest_str(payload: &str) -> String {
-    hex::encode(sha2::Sha256::digest(payload.as_bytes()))
+    let raw = hex::encode(sha2::Sha256::digest(payload.as_bytes()));
+    format!("0x{raw}")
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -67,6 +68,6 @@ mod tests {
             }
             ";
         let items = parse_query(query);
-        eprintln!("{:?}", items);
+        assert_eq!(items, vec!["/personal/name/", "/personal/surname/"]);
     }
 }
