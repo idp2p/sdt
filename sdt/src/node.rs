@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -15,8 +15,8 @@ pub struct SdtBranch {
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum SdtBodyKind {
-    Value(SdtValue),
+pub enum SdtPayloadKind {
+    Leaf(SdtValue),
     Branch(SdtBranch),
 }
 
@@ -31,7 +31,7 @@ pub enum SdtNodeKind {
 pub struct SdtNode {
     pub proof: String,
     #[serde(flatten)]
-    pub body: SdtBodyKind,
+    pub payload: SdtPayloadKind,
 }
 
 impl SdtBranch {
@@ -41,25 +41,52 @@ impl SdtBranch {
         branch
     }
 
-    pub fn add(&mut self, key: &str, node: SdtNodeKind) -> &mut Self {
-        self.branch.insert(key.to_owned(), node);
+    pub fn add_node(&mut self, key: &str, node: SdtNode) -> &mut Self {
+        self.branch.insert(key.to_owned(), SdtNodeKind::Node(node));
         self
     }
 
+    pub fn add_str_value(&mut self, key: &str, val: &str) -> Result<&mut Self, SdtError> {
+        self.branch
+            .insert(key.to_owned(), SdtNodeKind::new_str_value(val)?);
+        Ok(self)
+    }
+
+    pub fn add_bool_value(&mut self, key: &str, val: bool) -> Result<&mut Self, SdtError> {
+        self.branch.insert(
+            key.to_owned(),
+            SdtNodeKind::new_value(SdtValueKind::Bool(val))?,
+        );
+        Ok(self)
+    }
+
+    pub fn add_i64_value(&mut self, key: &str, val: i64) -> Result<&mut Self, SdtError> {
+        self.branch.insert(
+            key.to_owned(),
+            SdtNodeKind::new_value(SdtValueKind::new_i64(val))?,
+        );
+        Ok(self)
+    }
+
+    pub fn add_value(&mut self, key: &str, val: SdtValueKind) -> Result<&mut Self, SdtError> {
+        self.branch
+            .insert(key.to_owned(), SdtNodeKind::new_value(val)?);
+        Ok(self)
+    }
+
     pub fn build(&mut self) -> Result<SdtNode, SdtError> {
-        let mut body: BTreeMap<String, SdtValueKind> = BTreeMap::new();
+        let mut proof_map = SdtProofPayload::new();
         for (k, v) in &self.branch {
             let key_proof = match v {
                 SdtNodeKind::Proof(s) => s.to_owned(),
                 SdtNodeKind::Node(n) => n.proof.to_owned(),
             };
-            body.insert(k.to_owned(), SdtValueKind::String(key_proof));
+            proof_map.insert_str(k, &key_proof);
         }
-        let payload = SdtPayload(body);
-        let proof = digest(&payload)?;
+        let proof = digest(&proof_map)?;
         Ok(SdtNode {
             proof,
-            body: SdtBodyKind::Branch(self.to_owned()),
+            payload: SdtPayloadKind::Branch(self.to_owned()),
         })
     }
 }
@@ -69,7 +96,7 @@ impl SdtNodeKind {
         let val = SdtValue::new(v);
         Ok(SdtNodeKind::Node(SdtNode {
             proof: val.gen_proof()?,
-            body: SdtBodyKind::Value(val),
+            payload: SdtPayloadKind::Leaf(val),
         }))
     }
 
@@ -83,17 +110,12 @@ impl SdtNodeKind {
 }
 
 impl SdtNode {
-    pub fn from_json(s: &str) -> Result<Self, SdtError> {
-        let claim: SdtClaim = serde_json::from_str(s)?;
-        claim.parse_json()
-    }
-
     pub fn disclose(&mut self, query: &str) -> Result<(), SdtError> {
         let query_keys = parse_query(query);
         let mut queue: Vec<(String, &mut SdtNode)> = vec![("/".to_owned(), self)];
         while let Some((path, cn)) = queue.pop() {
-            if let SdtBodyKind::Branch(body) = &mut cn.body {
-                let hm = &mut body.branch;
+            if let SdtPayloadKind::Branch(payload) = &mut cn.payload {
+                let hm = &mut payload.branch;
                 let mut path_keys: HashMap<String, String> = HashMap::new();
                 for (key, nk) in hm.to_owned() {
                     let path_key = format!("{}{}/", path, key.to_owned());
@@ -120,34 +142,25 @@ impl SdtNode {
         }
         Ok(())
     }
-
-
 }
 
 #[cfg(test)]
 mod tests {
-    use serde_json::{Number};
-
     use super::*;
     #[test]
     fn sdt_test() -> Result<(), SdtError> {
         let personal = SdtBranch::new()
-            .add("name", SdtNodeKind::new_str_value("Adem")?)
-            .add("surname", SdtNodeKind::new_str_value("Çağlın")?)
-            .add(
-                "age",
-                SdtNodeKind::new_value(SdtValueKind::Number(Number::from(40)))?,
-            )
+            .add_str_value("name", "Adem")?
+            .add_str_value("surname", "Çağlın")?
+            .add_i64_value("age", 40)?
             .build()?;
-        let assertions = SdtBranch::new()
-            .add("key_1", SdtNodeKind::new_str_value("0x12")?)
-            .build()?;
+        let assertions = SdtBranch::new().add_str_value("key_1", "0x12")?.build()?;
         let keys = SdtBranch::new()
-            .add("assertions", SdtNodeKind::Node(assertions))
+            .add_node("assertions", assertions)
             .build()?;
         let mut root = SdtBranch::new()
-            .add("personal", SdtNodeKind::Node(personal))
-            .add("keys", SdtNodeKind::Node(keys))
+            .add_node("personal", personal)
+            .add_node("keys", keys)
             .build()?;
         let query = "
         {
@@ -157,25 +170,41 @@ mod tests {
         }
         ";
         root.disclose(query)?;
-        eprintln!("{}", serde_json::to_string(&root)?);
-        Ok(())
-    }
-
-    #[test]
-    fn from_json_test() -> Result<(), SdtError> {
-        let s = r#"{
-            "personal": {
-               "name": "Adem",
-               "age": 5
-            },
-            "keys": {
-               "assertions": {
-                  "key-1": "0x12...."
-               }
+        match root.payload {
+            SdtPayloadKind::Branch(root_branch) => {
+                if let SdtNodeKind::Node(_) = root_branch.branch.get("keys").unwrap() {
+                    panic!("Keys should be proof")
+                }
+                match root_branch.branch.get("personal").unwrap() {
+                    SdtNodeKind::Proof(_) => panic!("Personal should be node"),
+                    SdtNodeKind::Node(personal_node) => match &personal_node.payload {
+                        SdtPayloadKind::Leaf(_) => panic!("Personal should be branch"),
+                        SdtPayloadKind::Branch(personal_br) => {
+                            if let SdtNodeKind::Node(_) = personal_br.branch.get("surname").unwrap()
+                            {
+                                panic!("Surname should be proof")
+                            }
+                            if let SdtNodeKind::Node(name_node) =
+                                personal_br.branch.get("name").unwrap()
+                            {
+                                if let SdtPayloadKind::Branch(_) = name_node.payload {
+                                    panic!("Name should be leaf")
+                                }
+                            } else {
+                                panic!("Name should exist")
+                            }
+                        }
+                    },
+                }
             }
-        }"#;
-        let node = SdtNode::from_json(s)?;
-        eprintln!("{}", serde_json::to_string(&node)?);
+            _ => panic!("Root should be branch"),
+        }
+        /*let root_val = serde_json::Value::from_str(&serde_json::to_string(&root)?)?;
+        let val = root_val.get("branch")
+           .and_then(|v| v.get("personal"))
+           .and_then(|v| v.get("branch"))
+           .and_then(|v| v.get("name"));
+        eprintln!("{}", serde_json::to_string(&root)?);*/
         Ok(())
     }
 }
