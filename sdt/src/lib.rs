@@ -2,11 +2,13 @@ pub mod error;
 pub mod node;
 pub mod utils;
 pub mod value;
+use std::collections::HashMap;
+
 use error::SdtError;
 use node::SdtNode;
 use serde::{Deserialize, Serialize};
 use utils::digest;
-use value::{SdtClaim, SdtProofPayload};
+use value::{SdtClaim, SdtProofPayload, SdtResult};
 const HASH_ALG: u64 = 0x12;
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct SdtPayload {
@@ -70,23 +72,25 @@ impl Sdt {
         Ok(self.to_owned())
     }
 
-    pub fn disclose(&mut self, query: &str) -> Result<(), SdtError> {
-        self.payload.disclose(query)?;
+    pub fn select(&mut self, query: &str) -> Result<(), SdtError> {
+        self.payload.select(query)?;
         Ok(())
     }
 
-    pub fn validate(&self) -> Result<bool, SdtError> {
+    pub fn disclose(&self) -> Result<bool, SdtError> {
+        let mut result =SdtResult::Branch(HashMap::new());
+        self.payload.node.disclose(&mut result)?;
         todo!()
     }
 }
 
 impl SdtPayload {
-    pub fn disclose(&mut self, query: &str) -> Result<&mut Self, SdtError> {
-        self.node.disclose(query)?;
+    pub fn select(&mut self, query: &str) -> Result<&mut Self, SdtError> {
+        self.node.select(query)?;
         if self.next.is_none() {
             return Ok(self);
         }
-        self.next.as_mut().unwrap().disclose(query)
+        self.next.as_mut().unwrap().select(query)
     }
 }
 
@@ -135,7 +139,7 @@ mod tests {
             .mutate(mutation2)?
             .build()?;
 
-        sdt.disclose(query)?;
+        sdt.select(query)?;
         eprintln!("{}", serde_json::to_string(&sdt)?);
         Ok(())
     }

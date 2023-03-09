@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
 use crate::{
     error::SdtError,
@@ -110,7 +111,7 @@ impl SdtNodeKind {
 }
 
 impl SdtNode {
-    pub fn disclose(&mut self, query: &str) -> Result<(), SdtError> {
+    pub fn select(&mut self, query: &str) -> Result<(), SdtError> {
         let query_keys = parse_query(query);
         let mut queue: Vec<(String, &mut SdtNode)> = vec![("/".to_owned(), self)];
         while let Some((path, cn)) = queue.pop() {
@@ -142,6 +143,32 @@ impl SdtNode {
         }
         Ok(())
     }
+
+    pub fn disclose(&self, result: &mut SdtResult) -> Result<(), SdtError> {
+        match &self.payload {
+            SdtPayloadKind::Leaf(leaf) => {
+                match result {
+                    SdtResult::Values(values) => values.push(leaf.value.to_owned()),
+                    SdtResult::Branch(_) => todo!(),
+                }
+            }
+            SdtPayloadKind::Branch(br) => {
+                for (k, v) in &br.branch {
+                    if let SdtResult::Branch(map) = result {
+                        //map.insert(k, v);
+                        match v {
+                            SdtNodeKind::Node(node) => {
+                                node.disclose(map.get_mut(k).unwrap())?;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
+        todo!()
+    }
 }
 
 #[cfg(test)]
@@ -169,7 +196,7 @@ mod tests {
             }
         }
         ";
-        root.disclose(query)?;
+        root.select(query)?;
         match root.payload {
             SdtPayloadKind::Branch(root_branch) => {
                 if let SdtNodeKind::Node(_) = root_branch.branch.get("keys").unwrap() {
