@@ -2,7 +2,7 @@ pub mod error;
 pub mod node;
 pub mod utils;
 pub mod value;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use error::SdtError;
 use node::SdtNode;
@@ -68,21 +68,24 @@ impl Sdt {
         Ok(())
     }
 
-    pub fn verify(&self, proofs: Vec<String>) -> Result<SdtResult, SdtError> {
+    pub fn verify(&self, proofs: VecDeque<String>) -> Result<SdtResult, SdtError> {
         let mut proofs = proofs.clone();
-        if let Some(proof) = proofs.pop() {
+        if let Some(proof) = proofs.pop_front() {
             let mut result = SdtResult::Branch(HashMap::new());
             let node_proof = self.payload.node.verify()?;
             let inception_proof = inception_proof(&self.subject, &node_proof)?;
             if proof != inception_proof {
-                eprintln!("Inception is not match: {} {} {}", node_proof, proof, inception_proof);
+                eprintln!(
+                    "Inception is not match: {} {} {}",
+                    node_proof, proof, inception_proof
+                );
                 return Err(SdtError::Other);
             }
             self.payload.node.disclose("", &mut result)?;
             if let Some(next) = &self.payload.next {
                 next.verify(&self.payload.proof, &mut proofs, &mut result)?;
             }
-                
+
             return Ok(result);
         }
         Err(SdtError::Other)
@@ -121,10 +124,10 @@ impl SdtPayload {
     pub fn verify(
         &self,
         prev: &str,
-        proofs: &mut Vec<String>,
+        proofs: &mut VecDeque<String>,
         res: &mut SdtResult,
     ) -> Result<(), SdtError> {
-        if let Some(proof) = proofs.pop() {
+        if let Some(proof) = proofs.pop_front() {
             let node_proof = self.node.verify()?;
             let pay_proof = mutation_proof(prev, &node_proof)?;
             if proof != pay_proof {
@@ -135,7 +138,7 @@ impl SdtPayload {
 
             if let Some(next) = &self.next {
                 return next.verify(&self.proof, proofs, res);
-            }else{
+            } else {
                 return Ok(());
             }
         }
@@ -192,8 +195,8 @@ mod tests {
         let mutation_pay = sdt.payload.next.clone().unwrap();
         let mutation_proof = mutation_pay.proof.clone();
         let mutation2_proof = mutation_pay.next.unwrap().proof.clone();
-
-        let result = sdt.verify(vec![mutation2_proof,  mutation_proof, inception_proof])?;
+        let proofs = VecDeque::from([inception_proof, mutation_proof, mutation2_proof]);
+        let result = sdt.verify(proofs)?;
         sdt.select(query)?;
         eprintln!("{}", serde_json::to_string(&result)?);
         //eprintln!("{}", serde_json::to_string(&sdt)?);
