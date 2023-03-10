@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 
 use crate::{
     error::SdtError,
@@ -144,21 +143,26 @@ impl SdtNode {
         Ok(())
     }
 
-    pub fn disclose(&self, result: &mut SdtResult) -> Result<(), SdtError> {
-        match &self.payload {
-            SdtPayloadKind::Leaf(leaf) => {
-                match result {
-                    SdtResult::Values(values) => values.push(leaf.value.to_owned()),
-                    SdtResult::Branch(_) => todo!(),
+    pub fn disclose(&self, key: &str, result: &mut SdtResult) -> Result<(), SdtError> {
+        if let SdtResult::Branch(map) = result {
+            match &self.payload {
+                SdtPayloadKind::Leaf(leaf) => {
+                    let entry = map
+                        .entry(key.to_owned())
+                        .or_insert(SdtResult::Values(vec![]));
+                    if let SdtResult::Values(values) = entry {
+                        values.push(leaf.value.to_owned());
+                    }
                 }
-            }
-            SdtPayloadKind::Branch(br) => {
-                for (k, v) in &br.branch {
-                    if let SdtResult::Branch(map) = result {
-                        //map.insert(k, v);
+                SdtPayloadKind::Branch(br) => {
+                    let new_branch = map
+                        .entry(key.to_owned())
+                        .or_insert(SdtResult::Branch(HashMap::new()));
+
+                    for (k, v) in &br.branch {
                         match v {
                             SdtNodeKind::Node(node) => {
-                                node.disclose(map.get_mut(k).unwrap())?;
+                                node.disclose(k, new_branch)?;
                             }
                             _ => {}
                         }
@@ -166,11 +170,30 @@ impl SdtNode {
                 }
             }
         }
+        Ok(())
+    }
 
-        todo!()
+    pub fn verify(&self) -> Result<String, SdtError> {
+        let proof = match &self.payload {
+            SdtPayloadKind::Leaf(leaf) => leaf.gen_proof(),
+            SdtPayloadKind::Branch(br) => {
+                let mut proof_map = SdtProofPayload::new();
+                for (k, v) in &br.branch {
+                    let key_proof = match v {
+                        SdtNodeKind::Proof(s) => s.to_owned(),
+                        SdtNodeKind::Node(n) => n.verify()?,
+                    };
+                    proof_map.insert_str(k, &key_proof);
+                }
+                digest(&proof_map)
+            }
+        }?;
+        if self.proof != proof {
+            return Err(SdtError::Other);
+        }
+        Ok(proof)
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,6 +220,11 @@ mod tests {
         }
         ";
         root.select(query)?;
+        eprintln!("{}", serde_json::to_string(&root)?);
+        eprintln!("{}", root.verify()?);
+        //let mut result = SdtResult::Branch(HashMap::new());
+        //root.disclose("", &mut result)?;
+        //eprintln!("{}", serde_json::to_string(&result)?);
         match root.payload {
             SdtPayloadKind::Branch(root_branch) => {
                 if let SdtNodeKind::Node(_) = root_branch.branch.get("keys").unwrap() {
