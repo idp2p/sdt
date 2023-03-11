@@ -1,14 +1,17 @@
+pub mod dto;
 pub mod error;
 pub mod node;
+pub mod proof;
+pub mod service;
 pub mod utils;
 pub mod value;
-use std::collections::{HashMap, VecDeque};
+use proof::SdtProof;
+use std::collections::HashMap;
 
+use dto::{SdtClaim, SdtDiscloseResult};
 use error::SdtError;
 use node::SdtNode;
 use serde::{Deserialize, Serialize};
-use utils::digest;
-use value::{SdtClaim, SdtProofPayload, SdtResult};
 const HASH_ALG: u64 = 0x12;
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct SdtPayload {
@@ -37,11 +40,12 @@ impl SdtPayload {
 impl Sdt {
     pub fn new(sub: &str, claim: SdtClaim) -> Result<Self, SdtError> {
         let node = claim.to_node()?;
+        let proof = inception_proof(sub, &node.proof)?;
         Ok(Sdt {
             hash_alg: HASH_ALG,
             subject: sub.to_owned(),
             payload: SdtPayload {
-                proof: inception_proof(sub, &node.proof)?,
+                proof,
                 node,
                 next: None,
             },
@@ -51,9 +55,10 @@ impl Sdt {
     pub fn mutate(&mut self, claim: SdtClaim) -> Result<&mut Self, SdtError> {
         let current = self.payload.find_current();
         let node = claim.to_node()?;
+        let proof = mutation_proof(&current.proof, &node.proof)?;
         current.next = Some(Box::new(SdtPayload {
-            proof: mutation_proof(&current.proof, &node.proof)?,
-            node: node,
+            proof,
+            node,
             next: None,
         }));
         Ok(self)
@@ -68,48 +73,36 @@ impl Sdt {
         Ok(())
     }
 
-    pub fn verify(&self, proofs: VecDeque<String>) -> Result<SdtResult, SdtError> {
-        let mut proofs = proofs.clone();
-        if let Some(proof) = proofs.pop_front() {
-            let mut result = SdtResult::Branch(HashMap::new());
-            let node_proof = self.payload.node.verify()?;
-            let inception_proof = inception_proof(&self.subject, &node_proof)?;
-            if proof != inception_proof {
-                eprintln!(
-                    "Inception is not match: {} {} {}",
-                    node_proof, proof, inception_proof
-                );
-                return Err(SdtError::Other);
+    pub fn verify(&self, proof: &str) -> Result<SdtDiscloseResult, SdtError> {
+        let mut result = SdtDiscloseResult::Branch(HashMap::new());
+        let node_proof = self.payload.node.verify()?;
+        let inception_proof = inception_proof(&self.subject, &node_proof)?;
+        self.payload.node.disclose("", &mut result)?;
+        if let Some(next) = &self.payload.next {
+            let verified_proof = next.verify(&inception_proof, &mut result)?;
+            if verified_proof != proof {
+                return Err(SdtError::VerificationError {
+                    expected: proof.to_owned(),
+                    actual: verified_proof,
+                });
             }
-            self.payload.node.disclose("", &mut result)?;
-            if let Some(next) = &self.payload.next {
-                next.verify(&self.payload.proof, &mut proofs, &mut result)?;
-            }
-
-            return Ok(result);
         }
-        Err(SdtError::Other)
+        Ok(result)
     }
 }
-
 fn inception_proof(sub: &str, claim_proof: &str) -> Result<String, SdtError> {
-    let proof_map = SdtProofPayload::new()
+    SdtProof::new()
         .insert_i64("hash_alg", HASH_ALG as i64)
         .insert_str("subject", sub)
-        .insert_str("claim_proof", claim_proof)
-        .build();
-
-    let digest = digest(&proof_map);
-    eprintln!("{:?}", digest);
-    digest
+        .insert_str("root", claim_proof)
+        .digest()
 }
 
 fn mutation_proof(previous: &str, claim_proof: &str) -> Result<String, SdtError> {
-    let proof_map = SdtProofPayload::new()
-        .insert_str("claim_proof", claim_proof)
+    SdtProof::new()
+        .insert_str("root", claim_proof)
         .insert_str("previous", previous)
-        .build();
-    digest(&proof_map)
+        .digest()
 }
 
 impl SdtPayload {
@@ -121,28 +114,15 @@ impl SdtPayload {
         self.next.as_mut().unwrap().select(query)
     }
 
-    pub fn verify(
-        &self,
-        prev: &str,
-        proofs: &mut VecDeque<String>,
-        res: &mut SdtResult,
-    ) -> Result<(), SdtError> {
-        if let Some(proof) = proofs.pop_front() {
-            let node_proof = self.node.verify()?;
-            let pay_proof = mutation_proof(prev, &node_proof)?;
-            if proof != pay_proof {
-                //eprintln!("Proof is not match: {} {}", proof, pay_proof);
-                return Err(SdtError::Other);
-            }
-            self.node.disclose("", res)?;
-
-            if let Some(next) = &self.next {
-                return next.verify(&self.proof, proofs, res);
-            } else {
-                return Ok(());
-            }
+    pub fn verify(&self, prev: &str, res: &mut SdtDiscloseResult) -> Result<String, SdtError> {
+        let node_proof = self.node.verify()?;
+        let pay_proof = mutation_proof(prev, &node_proof)?;
+        self.node.disclose("", res)?;
+        if let Some(next) = &self.next {
+            return next.verify(&self.proof, res);
+        } else {
+            return Ok(pay_proof);
         }
-        Err(SdtError::Other)
     }
 }
 
@@ -191,12 +171,16 @@ mod tests {
             .mutate(mutation2)?
             .build()?;
         eprintln!("{}", serde_json::to_string(&sdt)?);
-        let inception_proof = sdt.payload.proof.clone();
-        let mutation_pay = sdt.payload.next.clone().unwrap();
-        let mutation_proof = mutation_pay.proof.clone();
-        let mutation2_proof = mutation_pay.next.unwrap().proof.clone();
-        let proofs = VecDeque::from([inception_proof, mutation_proof, mutation2_proof]);
-        let result = sdt.verify(proofs)?;
+        let result = sdt.verify(
+            &sdt.payload
+                .next
+                .clone()
+                .unwrap()
+                .next
+                .clone()
+                .unwrap()
+                .proof,
+        )?;
         sdt.select(query)?;
         eprintln!("{}", serde_json::to_string(&result)?);
         //eprintln!("{}", serde_json::to_string(&sdt)?);

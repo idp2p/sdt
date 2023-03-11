@@ -1,12 +1,8 @@
-use std::collections::HashMap;
-
-use serde::{Deserialize, Serialize};
-
 use crate::{
-    error::SdtError,
-    utils::{digest, parse_query},
-    value::*,
+    dto::SdtDiscloseResult, error::SdtError, proof::SdtProof, utils::parse_query, value::*,
 };
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct SdtBranch {
@@ -75,7 +71,7 @@ impl SdtBranch {
     }
 
     pub fn build(&mut self) -> Result<SdtNode, SdtError> {
-        let mut proof_map = SdtProofPayload::new();
+        let mut proof_map = SdtProof::new();
         for (k, v) in &self.branch {
             let key_proof = match v {
                 SdtNodeKind::Proof(s) => s.to_owned(),
@@ -83,7 +79,7 @@ impl SdtBranch {
             };
             proof_map.insert_str(k, &key_proof);
         }
-        let proof = digest(&proof_map)?;
+        let proof = proof_map.digest()?;
         Ok(SdtNode {
             proof,
             payload: SdtPayloadKind::Branch(self.to_owned()),
@@ -143,21 +139,21 @@ impl SdtNode {
         Ok(())
     }
 
-    pub fn disclose(&self, key: &str, result: &mut SdtResult) -> Result<(), SdtError> {
-        if let SdtResult::Branch(map) = result {
+    pub fn disclose(&self, key: &str, result: &mut SdtDiscloseResult) -> Result<(), SdtError> {
+        if let SdtDiscloseResult::Branch(map) = result {
             match &self.payload {
                 SdtPayloadKind::Leaf(leaf) => {
                     let entry = map
                         .entry(key.to_owned())
-                        .or_insert(SdtResult::Values(vec![]));
-                    if let SdtResult::Values(values) = entry {
+                        .or_insert(SdtDiscloseResult::Values(vec![]));
+                    if let SdtDiscloseResult::Values(values) = entry {
                         values.push(leaf.value.to_owned());
                     }
                 }
                 SdtPayloadKind::Branch(br) => {
                     let new_branch = map
                         .entry(key.to_owned())
-                        .or_insert(SdtResult::Branch(HashMap::new()));
+                        .or_insert(SdtDiscloseResult::Branch(HashMap::new()));
 
                     for (k, v) in &br.branch {
                         match v {
@@ -177,7 +173,7 @@ impl SdtNode {
         let proof = match &self.payload {
             SdtPayloadKind::Leaf(leaf) => leaf.gen_proof(),
             SdtPayloadKind::Branch(br) => {
-                let mut proof_map = SdtProofPayload::new();
+                let mut proof_map = SdtProof::new();
                 for (k, v) in &br.branch {
                     let key_proof = match v {
                         SdtNodeKind::Proof(s) => s.to_owned(),
@@ -185,11 +181,14 @@ impl SdtNode {
                     };
                     proof_map.insert_str(k, &key_proof);
                 }
-                digest(&proof_map)
+                proof_map.digest()
             }
         }?;
         if self.proof != proof {
-            return Err(SdtError::Other);
+            return Err(SdtError::VerificationError {
+                expected: self.proof.to_owned(),
+                actual: proof,
+            });
         }
         Ok(proof)
     }
