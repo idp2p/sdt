@@ -44,5 +44,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_test() {}
+    fn parse_test() {
+        let r = "bb".as_bytes() > "aa".as_bytes();
+        eprintln!("{r}");
+    }
 }

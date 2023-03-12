@@ -1,13 +1,6 @@
-use std::collections::{BTreeMap, HashMap};
-
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    error::SdtError,
-    node::{SdtBranch, SdtNode},
-    proof::SdtProof,
-    utils::{create_random, digest},
-};
+use crate::{error::SdtError, proof::SdtProof, utils::create_random};
 use serde_json::Number;
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -52,8 +45,6 @@ mod tests {
 
     #[test]
     fn result_test() -> Result<(), SdtError> {
-        
         Ok(())
     }
-
 }

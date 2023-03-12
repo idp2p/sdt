@@ -5,6 +5,7 @@ pub mod proof;
 pub mod service;
 pub mod utils;
 pub mod value;
+pub mod node2;
 use proof::SdtProof;
 use std::collections::HashMap;
 
