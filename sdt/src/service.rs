@@ -1,4 +1,4 @@
-use crate::{dto::{SdtClaim, SdtDiscloseResult}, error::SdtError, Sdt};
+use crate::{dto::{SdtClaim, SdtValueResult}, error::SdtError, Sdt};
 use serde::{Deserialize, Serialize};
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -16,7 +16,7 @@ pub enum SdtResult {
     Inception(Sdt),
     Mutation(Sdt),
     Select(Sdt),
-    Verification(SdtDiscloseResult),
+    Verification(SdtValueResult),
     Error{
         error_kind: String,
         message: String

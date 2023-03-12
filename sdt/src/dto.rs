@@ -6,9 +6,9 @@ use crate::{value::SdtValueKind, node::{SdtNode, SdtBranch}, error::SdtError};
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum SdtDiscloseResult {
+pub enum SdtValueResult {
     Values(Vec<SdtValueKind>),
-    Branch(HashMap<String, SdtDiscloseResult>),
+    Branch(HashMap<String, SdtValueResult>),
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]

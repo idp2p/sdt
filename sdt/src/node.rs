@@ -1,5 +1,5 @@
 use crate::{
-    dto::SdtDiscloseResult, error::SdtError, proof::SdtProof, utils::parse_query, value::*,
+    dto::{ SdtValueResult}, error::SdtError, proof::SdtProof, utils::parse_query, value::*,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -139,21 +139,21 @@ impl SdtNode {
         Ok(())
     }
 
-    pub fn disclose(&self, key: &str, result: &mut SdtDiscloseResult) -> Result<(), SdtError> {
-        if let SdtDiscloseResult::Branch(map) = result {
+    pub fn disclose(&self, key: &str, result: &mut SdtValueResult) -> Result<(), SdtError> {
+        if let SdtValueResult::Branch(map) = result {
             match &self.payload {
                 SdtPayloadKind::Leaf(leaf) => {
                     let entry = map
                         .entry(key.to_owned())
-                        .or_insert(SdtDiscloseResult::Values(vec![]));
-                    if let SdtDiscloseResult::Values(values) = entry {
+                        .or_insert(SdtValueResult::Values(vec![]));
+                    if let SdtValueResult::Values(values) = entry {
                         values.push(leaf.value.to_owned());
                     }
                 }
                 SdtPayloadKind::Branch(br) => {
                     let new_branch = map
                         .entry(key.to_owned())
-                        .or_insert(SdtDiscloseResult::Branch(HashMap::new()));
+                        .or_insert(SdtValueResult::Branch(HashMap::new()));
 
                     for (k, v) in &br.branch {
                         match v {
