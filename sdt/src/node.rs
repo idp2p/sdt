@@ -132,24 +132,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn result_test() -> Result<(), SdtError> {
+    fn proof_test() -> Result<(), SdtError> {
         let result_str = r#"
             {
                 "personal": {
                     "name": {
-                        "salt": "salt",
+                        "salt": "0x1234567890",
                         "value": "Adem"
-                    },
-                    "surname": {
-                        "salt": "b",
-                        "value": 5,
-                        "bb": false
                     }
-                }
+                },
+                "keys": "0x1234567890"
             }"#;
 
         let r: SdtNode = serde_json::from_str(result_str)?;
-        eprintln!("{:?}", r);
+        assert_eq!(
+            "0x79ee471c5bb7fb0b51a9fc628f4ad7a21f8304c0ed13ee4364efbfd4ffbd85e6",
+            r.gen_proof()?
+        );
         Ok(())
     }
 
