@@ -19,17 +19,26 @@ pub enum SdtResult {
     Selection(Sdt),
     Proof(String),
     Verification(bool),
-    Error { error_kind: String, message: String },
+    Error(String),
 }
 
-impl SdtInput {
-    pub fn from_str(input: &str) -> Result<Self, SdtError> {
-        let s: Self = serde_json::from_str(input)?;
-        Ok(s)
+pub struct SdtService(pub String);
+
+impl SdtService {
+    pub fn execute(&self) -> String {
+        let res = match self.execute_inner() {
+            Ok(res) => res,
+            Err(err) => SdtResult::Error(err.to_string()),
+        };
+        match serde_json::to_string_pretty(&res) {
+            Ok(s) => s,
+            Err(e) => format!(r#"{{"kind": "Error","message": {}}}"#, e.to_string()),
+        }
     }
 
-    pub fn execute(self) -> Result<SdtResult, SdtError> {
-        let result = match self {
+    fn execute_inner(&self) -> Result<SdtResult, SdtError> {
+        let input: SdtInput = serde_json::from_str(&self.0)?;
+        let result = match input {
             SdtInput::Inception { subject, claim } => {
                 SdtResult::Inception(Sdt::new(&subject, claim))
             }
