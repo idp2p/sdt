@@ -1,4 +1,4 @@
-use crate::{dto::{SdtClaim, SdtValueResult}, error::SdtError, Sdt};
+use crate::{dto::SdtClaim, error::SdtError, Sdt};
 use serde::{Deserialize, Serialize};
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 pub enum SdtInput {
     Inception { subject: String, claim: SdtClaim },
     Mutation { sdt: Sdt, claim: SdtClaim },
-    Select { sdt: Sdt, query: String },
-    Verification(Sdt),
+    Selection { sdt: Sdt, query: String },
+    Proof(Sdt),
+    Verification { sdt: Sdt, proof: String },
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -15,27 +16,36 @@ pub enum SdtInput {
 pub enum SdtResult {
     Inception(Sdt),
     Mutation(Sdt),
-    Select(Sdt),
-    Verification(SdtValueResult),
-    Error{
-        error_kind: String,
-        message: String
-    }
+    Selection(Sdt),
+    Proof(String),
+    Verification(bool),
+    Error { error_kind: String, message: String },
 }
 
 impl SdtInput {
-    pub fn from_str(input: &str) -> Result<Self, SdtError>{
+    pub fn from_str(input: &str) -> Result<Self, SdtError> {
         let s: Self = serde_json::from_str(input)?;
         Ok(s)
     }
 
-    pub fn execute(&self) -> Result<SdtResult, SdtError> {
-        match &self {
-            SdtInput::Inception { subject, claim } => todo!(),
-            SdtInput::Mutation { sdt, claim } => todo!(),
-            SdtInput::Select { sdt, query } => todo!(),
-            SdtInput::Verification(_) => todo!(),
-        }
+    pub fn execute(self) -> Result<SdtResult, SdtError> {
+        let result = match self {
+            SdtInput::Inception { subject, claim } => {
+                SdtResult::Inception(Sdt::new(&subject, claim))
+            }
+            SdtInput::Mutation { sdt, claim } => {
+                let mut sdt_clone = sdt.clone();
+                SdtResult::Mutation(sdt_clone.mutate(claim).build())
+            }
+            SdtInput::Selection { sdt, query } => {
+                let mut sdt_clone = sdt.clone();
+                sdt_clone.select(&query)?;
+                SdtResult::Selection(sdt_clone.build())
+            }
+            SdtInput::Proof(sdt) => SdtResult::Proof(sdt.gen_proof()?),
+            SdtInput::Verification { sdt, proof } => SdtResult::Verification(sdt.verify(&proof)?),
+        };
+        Ok(result)
     }
 }
 

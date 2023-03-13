@@ -5,12 +5,10 @@ pub mod proof;
 pub mod service;
 pub mod utils;
 pub mod value;
-pub mod node2;
-pub mod sdt2;
-use proof::SdtProof;
-use std::collections::HashMap;
 
-use dto::{SdtClaim, SdtValueResult};
+use proof::SdtProof;
+
+use dto::SdtClaim;
 use error::SdtError;
 use node::SdtNode;
 use serde::{Deserialize, Serialize};
@@ -18,99 +16,26 @@ use serde::{Deserialize, Serialize};
 const VERSION: u64 = 0x1;
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub struct SdtPayload {
-    pub proof: String,
+pub struct SdtItem {
     pub node: SdtNode,
-    pub next: Option<Box<SdtPayload>>,
+    pub next: Option<Box<SdtItem>>,
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct Sdt {
-    // JSON and HEX are default
-    pub version: u64, // SHA256
+    pub version: u64, // JSON + HEX + SHA256
     pub subject: String,
-    pub payload: SdtPayload,
+    pub inception: SdtItem,
 }
 
-impl SdtPayload {
+impl SdtItem {
     pub fn find_current(&mut self) -> &mut Self {
         if self.next.is_none() {
             return self;
         }
         self.next.as_mut().unwrap().find_current()
     }
-}
 
-impl Sdt {
-    pub fn new(sub: &str, claim: SdtClaim) -> Result<Self, SdtError> {
-        let node = claim.to_node()?;
-        let proof = inception_proof(sub, &node.proof)?;
-        Ok(Sdt {
-            version: VERSION,
-            subject: sub.to_owned(),
-            payload: SdtPayload {
-                proof,
-                node,
-                next: None,
-            },
-        })
-    }
-
-    pub fn mutate(&mut self, claim: SdtClaim) -> Result<&mut Self, SdtError> {
-        let current = self.payload.find_current();
-        let node = claim.to_node()?;
-        let proof = mutation_proof(&current.proof, &node.proof)?;
-        current.next = Some(Box::new(SdtPayload {
-            proof,
-            node,
-            next: None,
-        }));
-        Ok(self)
-    }
-
-    pub fn build(&mut self) -> Result<Self, SdtError> {
-        Ok(self.to_owned())
-    }
-
-    pub fn select(&mut self, query: &str) -> Result<(), SdtError> {
-        self.payload.select(query)?;
-        Ok(())
-    }
-
-    pub fn verify(&self, proof: &str) -> Result<SdtValueResult, SdtError> {
-        let mut result = SdtValueResult::Branch(HashMap::new());
-        let node_proof = self.payload.node.verify()?;
-        let inception_proof = inception_proof(&self.subject, &node_proof)?;
-        self.payload.node.disclose("", &mut result)?;
-        if let Some(next) = &self.payload.next {
-            let verified_proof = next.verify(&inception_proof, &mut result)?;
-            if verified_proof != proof {
-                return Err(SdtError::VerificationError {
-                    expected: proof.to_owned(),
-                    actual: verified_proof,
-                });
-            }
-        }
-        Ok(result)
-    }
-}
-
-fn inception_proof(sub: &str, claim_proof: &str) -> Result<String, SdtError> {
-    SdtProof::new()
-        .insert_i64("version", VERSION as i64)
-        .insert_str("subject", sub)
-        .insert_str("root", claim_proof)
-        .digest()
-}
-
-fn mutation_proof(previous: &str, claim_proof: &str) -> Result<String, SdtError> {
-    SdtProof::new()
-        .insert_str("root", claim_proof)
-        .insert_str("previous", previous)
-        .digest()
-}
-
-impl SdtPayload {
     pub fn select(&mut self, query: &str) -> Result<&mut Self, SdtError> {
         self.node.select(query)?;
         if self.next.is_none() {
@@ -119,15 +44,68 @@ impl SdtPayload {
         self.next.as_mut().unwrap().select(query)
     }
 
-    pub fn verify(&self, prev: &str, res: &mut SdtValueResult) -> Result<String, SdtError> {
-        let node_proof = self.node.verify()?;
-        let pay_proof = mutation_proof(prev, &node_proof)?;
-        self.node.disclose("", res)?;
+    pub fn gen_proof(&self, prev: &str) -> Result<String, SdtError> {
+        let node_proof = self.node.gen_proof()?;
+        let item_proof = SdtProof::new()
+            .insert_str("previous", prev)
+            .insert_str("root", &node_proof)
+            .digest()?;
         if let Some(next) = &self.next {
-            return next.verify(&self.proof, res);
+            return next.gen_proof(&item_proof);
         } else {
-            return Ok(pay_proof);
+            return Ok(item_proof);
         }
+    }
+}
+
+impl Sdt {
+    pub fn new(sub: &str, claim: SdtClaim) -> Self {
+        let node = claim.to_node();
+        Sdt {
+            version: VERSION,
+            subject: sub.to_owned(),
+            inception: SdtItem { node, next: None },
+        }
+    }
+
+    pub fn mutate(&mut self, claim: SdtClaim) -> &mut Self {
+        let current = self.inception.find_current();
+        let node = claim.to_node();
+        current.next = Some(Box::new(SdtItem { node, next: None }));
+        self
+    }
+
+    pub fn build(&mut self) -> Self {
+        self.to_owned()
+    }
+
+    pub fn select(&mut self, query: &str) -> Result<(), SdtError> {
+        self.inception.select(query)?;
+        Ok(())
+    }
+
+    pub fn gen_proof(&self) -> Result<String, SdtError> {
+        let inception_root = self.inception.node.gen_proof()?;
+        let inception_proof = SdtProof::new()
+            .insert_i64("version", VERSION as i64)
+            .insert_str("subject", &self.subject)
+            .insert_str("root", &inception_root)
+            .digest()?;
+        if let Some(next) = &self.inception.next {
+            return next.gen_proof(&inception_proof);
+        }
+        return Ok(inception_proof);
+    }
+
+    pub fn verify(&self, proof: &str) -> Result<bool, SdtError> {
+        let verified_proof = self.gen_proof()?;
+        if verified_proof != proof {
+            return Err(SdtError::VerificationError {
+                expected: proof.to_owned(),
+                actual: verified_proof,
+            });
+        }
+        Ok(true)
     }
 }
 
@@ -171,24 +149,14 @@ mod tests {
         let new_claim: SdtClaim = serde_json::from_str(new_claim_str)?;
         let mutation: SdtClaim = serde_json::from_str(mutation_str)?;
         let mutation2: SdtClaim = serde_json::from_str(mutation2_str)?;
-        let mut sdt = Sdt::new("did:p2p:123456", new_claim)?
-            .mutate(mutation)?
-            .mutate(mutation2)?
-            .build()?;
-        eprintln!("{}", serde_json::to_string(&sdt)?);
-        let result = sdt.verify(
-            &sdt.payload
-                .next
-                .clone()
-                .unwrap()
-                .next
-                .clone()
-                .unwrap()
-                .proof,
-        )?;
+        let mut sdt = Sdt::new("did:p2p:123456", new_claim)
+            .mutate(mutation)
+            .mutate(mutation2)
+            .build();
+        let proof = sdt.gen_proof()?;
         sdt.select(query)?;
-        eprintln!("{}", serde_json::to_string(&result)?);
-        //eprintln!("{}", serde_json::to_string(&sdt)?);
+        let proof2 = sdt.gen_proof()?;
+        assert_eq!(proof, proof2);
         Ok(())
     }
 }
