@@ -74,9 +74,10 @@ impl Sdt {
         self.to_owned()
     }
 
-    pub fn select(&mut self, query: &str) -> Result<(), SdtError> {
-        self.inception.select(query)?;
-        Ok(())
+    pub fn select(&self, query: &str) -> Result<Sdt, SdtError> {
+        let mut sdt = self.clone();
+        sdt.inception.select(query)?;
+        Ok(sdt)
     }
 
     pub fn gen_proof(&self) -> Result<String, SdtError> {
@@ -146,13 +147,13 @@ mod tests {
         let new_claim: SdtClaim = serde_json::from_str(new_claim_str)?;
         let mutation: SdtClaim = serde_json::from_str(mutation_str)?;
         let mutation2: SdtClaim = serde_json::from_str(mutation2_str)?;
-        let mut sdt = Sdt::new("did:p2p:123456", new_claim.to_node())
+        let sdt = Sdt::new("did:p2p:123456", new_claim.to_node())
             .mutate(mutation.to_node())
             .mutate(mutation2.to_node())
             .build();
         let proof = sdt.gen_proof()?;
-        sdt.select(query)?;
-        let proof2 = sdt.gen_proof()?;
+        let selected = sdt.select(query)?;
+        let proof2 = selected.gen_proof()?;
         assert_eq!(proof, proof2);
         Ok(())
     }

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
@@ -122,10 +121,7 @@ impl SdtNode {
         for (k, v) in &self.0 {
             builder.insert_str(&k, &v.gen_proof()?);
         }
-        let proof = builder.digest()?;
-        let payload_str = serde_json::to_string_pretty(&builder)?;
-        eprintln!("Proof is generated. Payload is {payload_str} and proof is {proof}");
-        Ok(proof)
+        builder.digest()
     }
 
     pub fn select(&mut self, query: &str) -> Result<(), SdtError> {
