@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{error::SdtError, proof::SdtProof, utils::create_random};
+use crate::{
+    error::SdtError,
+    proof::SdtProof,
+    utils::{create_random, to_hex_str},
+};
 use serde_json::Number;
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -20,8 +24,7 @@ pub struct SdtValue {
 
 impl SdtValue {
     pub fn new(value: SdtValueKind) -> Self {
-        let raw = hex::encode(create_random::<16>()).to_owned();
-        let salt = format!("0x{raw}");
+        let salt = to_hex_str(create_random::<16>());
         Self { salt, value }
     }
 
@@ -44,7 +47,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn result_test() -> Result<(), SdtError> {
+    fn gen_proof_test() -> Result<(), SdtError> {
+        let val = SdtValue {
+            salt: "0x1234567890".to_owned(),
+            value: SdtValueKind::Null,
+        };
+        assert_eq!(
+            "0x5e92bb6b8e3d152843a08cddb5b4015ffeeb3d939ee253aadcc7ed322a7de10c",
+            val.gen_proof()?
+        );
         Ok(())
     }
 }

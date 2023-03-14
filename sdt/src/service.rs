@@ -1,4 +1,4 @@
-use crate::{dto::SdtClaim, error::SdtError, Sdt};
+use crate::{error::SdtError, node::SdtClaim, Sdt};
 use serde::{Deserialize, Serialize};
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -40,11 +40,11 @@ impl SdtService {
         let input: SdtInput = serde_json::from_str(&self.0)?;
         let result = match input {
             SdtInput::Inception { subject, claim } => {
-                SdtResult::Inception(Sdt::new(&subject, claim))
+                SdtResult::Inception(Sdt::new(&subject, claim.to_node()))
             }
             SdtInput::Mutation { sdt, claim } => {
                 let mut sdt_clone = sdt.clone();
-                SdtResult::Mutation(sdt_clone.mutate(claim).build())
+                SdtResult::Mutation(sdt_clone.mutate(claim.to_node()).build())
             }
             SdtInput::Selection { sdt, query } => {
                 let mut sdt_clone = sdt.clone();

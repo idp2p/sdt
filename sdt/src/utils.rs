@@ -16,8 +16,11 @@ pub(crate) fn digest<T: Serialize>(payload: &T) -> Result<String, SdtError> {
 }
 
 pub(crate) fn digest_str(payload: &str) -> String {
-    let raw = hex::encode(sha2::Sha256::digest(payload.as_bytes()));
-    format!("0x{raw}")
+    to_hex_str(sha2::Sha256::digest(payload.as_bytes()))
+}
+
+pub(crate) fn to_hex_str<T: AsRef<[u8]>>(data: T) -> String{
+   format!("0x{}", hex::encode(data))
 }
 
 #[derive(PartialEq, Debug, Clone)]

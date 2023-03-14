@@ -1,4 +1,3 @@
-pub mod dto;
 pub mod error;
 pub mod node;
 pub mod proof;
@@ -7,8 +6,6 @@ pub mod utils;
 pub mod value;
 
 use proof::SdtProof;
-
-use dto::SdtClaim;
 use error::SdtError;
 use node::SdtNode;
 use serde::{Deserialize, Serialize};
@@ -59,8 +56,7 @@ impl SdtItem {
 }
 
 impl Sdt {
-    pub fn new(sub: &str, claim: SdtClaim) -> Self {
-        let node = claim.to_node();
+    pub fn new(sub: &str, node: SdtNode) -> Self {
         Sdt {
             version: VERSION,
             subject: sub.to_owned(),
@@ -68,9 +64,8 @@ impl Sdt {
         }
     }
 
-    pub fn mutate(&mut self, claim: SdtClaim) -> &mut Self {
+    pub fn mutate(&mut self, node: SdtNode) -> &mut Self {
         let current = self.inception.find_current();
-        let node = claim.to_node();
         current.next = Some(Box::new(SdtItem { node, next: None }));
         self
     }
@@ -111,6 +106,8 @@ impl Sdt {
 
 #[cfg(test)]
 mod tests {
+    use crate::node::SdtClaim;
+
     use super::*;
     #[test]
     fn sdt_test() -> Result<(), SdtError> {
@@ -149,9 +146,9 @@ mod tests {
         let new_claim: SdtClaim = serde_json::from_str(new_claim_str)?;
         let mutation: SdtClaim = serde_json::from_str(mutation_str)?;
         let mutation2: SdtClaim = serde_json::from_str(mutation2_str)?;
-        let mut sdt = Sdt::new("did:p2p:123456", new_claim)
-            .mutate(mutation)
-            .mutate(mutation2)
+        let mut sdt = Sdt::new("did:p2p:123456", new_claim.to_node())
+            .mutate(mutation.to_node())
+            .mutate(mutation2.to_node())
             .build();
         let proof = sdt.gen_proof()?;
         sdt.select(query)?;

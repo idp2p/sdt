@@ -1,9 +1,48 @@
 
 # Selective Disclosure Trie
 
-> "Selective Disclosure Trie" is a solution proposal that uses a data structure called a trie, to enable efficient and secure selective disclosure of fields from verifiable credentials for privacy enhancement 
+> "Selective Disclosure Trie" is a solution proposal that uses a data structure called a trie, to enable efficient and secure selective disclosure of fields from claims for privacy enhancement 
 
 > Inspired by Merkle Patricia Trie 
+
+## Example
+
+```rust
+ let personal = SdtNode::new()
+    .add_str_value("name", "Adem")
+    .add_str_value("surname", "Çağlın")
+    .add_bool_value("age_over_18", true)
+    .build();
+ let assertion_method = SdtNode::new().add_str_value("key_1", "0x12").build();
+ let keys = SdtNode::new().add_node("assertion_method", assertion_method).build();
+ let mut root = SdtNode::new()
+    .add_node("personal", personal)
+    .add_node("keys", keys)
+    .build();
+
+// Create new trie with subject id and inception claims
+
+let sdt = Sdt::new("did:p2p:123456", root).build();
+
+let proof = sdt.gen_proof()?; // proof of inception -> public source
+
+// Query for specific claim 
+
+let query = "
+{
+    personal {
+        age_over_18
+    }
+}
+";
+
+sdt.select(query)?; // Now sdt contains only required to prove age_over_18 claim
+
+
+// Verify a proof with trie
+
+let proof = sdt.verify("<latest proof>")?;
+```
 
 ## License
 

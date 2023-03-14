@@ -1,15 +1,22 @@
 use std::collections::HashMap;
 
+use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
 use crate::{
-    dto::SdtClaim,
     error::SdtError,
     proof::SdtProof,
     utils::parse_query,
     value::{SdtValue, SdtValueKind},
 };
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SdtClaim {
+    Value(SdtValueKind),
+    Node(HashMap<String, SdtClaim>),
+}
+
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct SdtNode(HashMap<String, SdtNodeKind>);
 
@@ -19,6 +26,26 @@ pub enum SdtNodeKind {
     Proof(String),
     Value(SdtValue),
     Node(SdtNode),
+}
+
+
+impl SdtClaim {
+    pub fn to_node(&self) -> SdtNode {
+        let mut node = SdtNode::new();
+        if let SdtClaim::Node(map) = &self {
+            for (k, v) in map {
+                match v {
+                    SdtClaim::Value(val) => {
+                        node.add_value(k, val.to_owned());
+                    }
+                    SdtClaim::Node(_) => {
+                        node.add_node(k, v.to_node());
+                    }
+                }
+            }
+        }
+        return node.build();
+    }
 }
 
 impl SdtNodeKind {
@@ -91,11 +118,14 @@ impl SdtNode {
     }
 
     pub fn gen_proof(&self) -> Result<String, SdtError> {
-        let mut proof = SdtProof::new();
+        let mut builder = SdtProof::new();
         for (k, v) in &self.0 {
-            proof.insert_str(&k, &v.gen_proof()?);
+            builder.insert_str(&k, &v.gen_proof()?);
         }
-        proof.digest()
+        let proof = builder.digest()?;
+        let payload_str = serde_json::to_string_pretty(&builder)?;
+        eprintln!("Proof is generated. Payload is {payload_str} and proof is {proof}");
+        Ok(proof)
     }
 
     pub fn select(&mut self, query: &str) -> Result<(), SdtError> {
@@ -159,8 +189,8 @@ mod tests {
             .add_str_value("surname", "Çağlın")
             .add_bool_value("over_18", true)
             .build();
-        let assertions = SdtNode::new().add_str_value("key_1", "0x12").build();
-        let keys = SdtNode::new().add_node("assertions", assertions).build();
+        let assertion_method = SdtNode::new().add_str_value("key_1", "0x12").build();
+        let keys = SdtNode::new().add_node("assertion_method", assertion_method).build();
         let mut root = SdtNode::new()
             .add_node("personal", personal)
             .add_node("keys", keys)
