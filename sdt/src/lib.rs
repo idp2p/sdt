@@ -147,10 +147,11 @@ mod tests {
         let new_claim: SdtClaim = serde_json::from_str(new_claim_str)?;
         let mutation: SdtClaim = serde_json::from_str(mutation_str)?;
         let mutation2: SdtClaim = serde_json::from_str(mutation2_str)?;
-        let sdt = Sdt::new("did:p2p:123456", new_claim.to_node())
+        let mut sdt = Sdt::new("did:p2p:123456", new_claim.to_node())
             .mutate(mutation.to_node())
             .mutate(mutation2.to_node())
             .build();
+        sdt.mutate(SdtNode::new());
         let proof = sdt.gen_proof()?;
         let selected = sdt.select(query)?;
         let proof2 = selected.gen_proof()?;

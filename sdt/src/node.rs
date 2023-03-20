@@ -27,7 +27,6 @@ pub enum SdtNodeKind {
     Node(SdtNode),
 }
 
-
 impl SdtClaim {
     pub fn to_node(&self) -> SdtNode {
         let mut node = SdtNode::new();
@@ -158,7 +157,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn proof_test() -> Result<(), SdtError> {
+    fn test_proof() -> Result<(), SdtError> {
         let result_str = r#"
             {
                 "personal": {
@@ -179,14 +178,72 @@ mod tests {
     }
 
     #[test]
-    fn select_test() -> Result<(), SdtError> {
+    fn test_full_proof() -> Result<(), SdtError> {
+        let result_str = r#"
+        {
+            "personal": {
+              "name": {
+                "salt": "0x19ea4887e02f48d2c32e7d28653e9e15",
+                "value": "Adem"
+              },
+              "surname": {
+                "salt": "0x70103fe8e86b0aec46d26399b6420bd7",
+                "value": "Çağlın"
+              }
+            },
+            "phones": {
+              "dial": {
+                "salt": "0x28da6aca6e0ee7123c25257321b0c8cd",
+                "value": "+90dial"
+              },
+              "cell": {
+                "salt": "0x611314ad6779d5c85217ad7107ff0dab",
+                "value": "+90cell"
+              }
+            },
+            "addresses": {
+              "home": {
+                "zipcode": {
+                  "salt": "0xcedc029019a3ac7e18e1e5992281f00c",
+                  "value": 2020
+                },
+                "city": {
+                  "salt": "0x477ddcb35182fd349c9c0b2a4793d83b",
+                  "value": "homecity"
+                }
+              },
+              "work": {
+                "zipcode": {
+                  "salt": "0xc0ee44ef8e96522bc33a3ac0e49f46b6",
+                  "value": 2030
+                },
+                "city": {
+                  "salt": "0x7efa4766c245beb3e9731c11adad5ab1",
+                  "value": "workcity"
+                }
+              }
+            }
+          }
+        "#;
+        let r: SdtNode = serde_json::from_str(result_str)?;
+        assert_eq!(
+            "0x5ddd4d67e93ee0cb027933eb9a024770fc985964bf7770d7f9a47033bd447c37",
+            r.gen_proof()?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_select() -> Result<(), SdtError> {
         let personal = SdtNode::new()
             .add_str_value("name", "Adem")
             .add_str_value("surname", "Çağlın")
             .add_bool_value("over_18", true)
             .build();
         let assertion_method = SdtNode::new().add_str_value("key_1", "0x12").build();
-        let keys = SdtNode::new().add_node("assertion_method", assertion_method).build();
+        let keys = SdtNode::new()
+            .add_node("assertion_method", assertion_method)
+            .build();
         let mut root = SdtNode::new()
             .add_node("personal", personal)
             .add_node("keys", keys)
@@ -221,5 +278,88 @@ mod tests {
             _ => panic!("Personal should be node"),
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_new_sdt_node() {
+        let sdt_node = SdtNode::new();
+        assert_eq!(sdt_node.0.len(), 0);
+    }
+
+    #[test]
+    fn test_add_value_to_sdt_node() {
+        let mut sdt_node = SdtNode::new();
+        sdt_node.add_value("name", SdtValueKind::String("John".to_owned()));
+        assert_eq!(sdt_node.0.len(), 1);
+        let name = sdt_node.0.get("name").unwrap();
+        match name {
+            SdtNodeKind::Value(val) => {
+                assert_eq!(val.value, SdtValueKind::String("John".to_owned()))
+            }
+            _ => panic!("Expected SdtNodeKind::Value"),
+        }
+    }
+
+    #[test]
+    fn test_add_node_to_sdt_node() {
+        let mut sdt_node = SdtNode::new();
+        let mut inner_node = SdtNode::new();
+        inner_node.add_value("age", SdtValueKind::new_i64(30));
+        sdt_node.add_node("person", inner_node);
+        assert_eq!(sdt_node.0.len(), 1);
+        let person = sdt_node.0.get("person").unwrap();
+        match person {
+            SdtNodeKind::Node(node) => {
+                assert_eq!(node.0.len(), 1);
+                let age = node.0.get("age").unwrap();
+                match age {
+                    SdtNodeKind::Value(val) => {
+                        assert_eq!(val.value, SdtValueKind::new_i64(30))
+                    }
+                    _ => panic!("Expected SdtNodeKind::Value"),
+                }
+            }
+            _ => panic!("Expected SdtNodeKind::Node"),
+        }
+    }
+
+    #[test]
+    fn test_add_proof_to_sdt_node() {
+        let mut sdt_node = SdtNode::new();
+        sdt_node.add_proof("name", "proof");
+        assert_eq!(sdt_node.0.len(), 1);
+        let proof = sdt_node.0.get("name").unwrap();
+        match proof {
+            SdtNodeKind::Proof(p) => assert_eq!(p, "proof"),
+            _ => panic!("Expected SdtNodeKind::Proof"),
+        }
+    }
+
+    #[test]
+    fn test_add_str_value_to_sdt_node() {
+        let mut sdt_node = SdtNode::new();
+        sdt_node.add_str_value("name", "John");
+        assert_eq!(sdt_node.0.len(), 1);
+        let name = sdt_node.0.get("name").unwrap();
+        match name {
+            SdtNodeKind::Value(val) => {
+                assert_eq!(val.value, SdtValueKind::String("John".to_owned()))
+            }
+            _ => panic!("Expected SdtNodeKind::Value"),
+        }
+    }
+
+    #[test]
+    fn test_add_number_value_to_sdt_node() {
+        let mut sdt_node = SdtNode::new();
+        sdt_node.add_number_value("age", 30);
+        assert_eq!(sdt_node.0.len(), 1);
+        let age = sdt_node.0.get("age").unwrap();
+        match age {
+            SdtNodeKind::Value(val) => {
+                assert_eq!(val.value, SdtValueKind::new_i64(30))
+            }
+            _ => panic!("Expected SdtNodeKind::Value"),
+        }
     }
 }

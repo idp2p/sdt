@@ -11,7 +11,7 @@
  let personal = SdtNode::new()
     .add_str_value("name", "Adem")
     .add_str_value("surname", "Çağlın")
-    .add_bool_value("age_over_18", true)
+    .add_bool_value("age_over_18", false)
     .build();
  let assertion_method = SdtNode::new().add_str_value("key_1", "0x12").build();
  let keys = SdtNode::new().add_node("assertion_method", assertion_method).build();
@@ -22,9 +22,20 @@
 
 // Create new trie with subject id and inception claims
 
-let sdt = Sdt::new("did:p2p:123456", root).build();
+let mut sdt = Sdt::new("did:p2p:123456", root).build();
 
-let proof = sdt.gen_proof()?; // proof of inception -> public source
+// Get the root proof and anchor it in a public source
+let proof = sdt.gen_proof()?;
+
+// After a while mutate a claim then  
+
+let mutation = SdtNode::new()
+    .add_str_value("age_over_18", true)
+    .build();
+
+sdt.mutate(SdtNode::new().add_node("personal", mutation));
+
+let proof = sdt.gen_proof()?; //Get  proof of mutation and change it in public source
 
 // Query for specific claim 
 
@@ -37,7 +48,8 @@ let query = "
 ";
 
 // Now sdt contains only required to prove age_over_18 claim
-let selected_sdt = sdt.select(query)?; 
+let selected_sdt = sdt.select(query)?;
+ 
 // You can verify proof's validity
 let is_valid = selected_sdt.verify(proof)?;
 
